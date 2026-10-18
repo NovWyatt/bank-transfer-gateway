@@ -204,7 +204,8 @@ Mỗi adapter có **fixture JSON** lấy từ ví dụ trong tài liệu chính 
 
 **Chống tranh chấp khi nhiều request đến cùng lúc:**
 - Bọc toàn bộ trong `DB::transaction` và khóa đơn bằng `Order::lockForUpdate()`.
-- Bảng `transactions` có `UNIQUE(provider, external_id)`, nên retry của nhà cung cấp không ghi hai lần.
+- Bảng `transactions` có `UNIQUE(shop_id, provider, external_id)`, nên retry của nhà cung cấp không ghi hai lần.
+  - Khóa có `shop_id`: nếu chỉ là `(provider, external_id)` thì một shop có thể tự ký webhook giả (họ biết secret của chính mình) mang `external_id` của shop khác, làm giao dịch thật của shop kia bị coi là trùng.
 
 **Trùng chéo giữa các nhà cung cấp:** một tài khoản ngân hàng có thể nối cùng lúc qua SePay và Pay2S, khi đó một giao dịch đến hai lần. Thêm khóa phụ: `bank_account_id + reference/transactionNumber + amount + thời điểm làm tròn phút`. Nếu trùng thì đánh dấu `duplicate_of`, không khớp lần hai.
 
@@ -273,7 +274,7 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
   - `38` = { `00`=`A000000727`, `01`={ `00`=BIN ngân hàng, `01`=số tài khoản }, `02`=`QRIBFTTA` }
   - `53`=`704`, `54`=số tiền, `58`=`VN`, `62`={ `08`=nội dung }
   - `63`=CRC16-CCITT (đa thức 0x1021, giá trị đầu 0xFFFF), tính trên toàn chuỗi kể cả `6304`
-- Danh sách ngân hàng và BIN lấy từ `https://api.vietqr.io/v2/banks` (76 ngân hàng; trường `bin`, `code`, `shortName`, `transferSupported`). Lưu vào seeder, không gọi API lúc chạy.
+- Danh sách ngân hàng và BIN lấy từ `https://api.vietqr.io/v2/banks` (76 ngân hàng; trường `bin`, `code`, `shortName`, `transferSupported`). Chụp vào `database/data/banks.json`, đọc qua `App\Payments\Banks\BankDirectory`; không gọi API lúc chạy.
 - **[cần kiểm tra]** Quét QR bằng ít nhất hai app ngân hàng khác nhau để chắc chuỗi đúng.
 
 ### 5.8 Nhiều shop và phân quyền
@@ -310,17 +311,17 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
 | `shops` | `name`, `slug`, `order_prefix`, `timezone`, `telegram_chat_id`, `settings` (json), `is_demo` |
 | `shop_user` | `shop_id`, `user_id`, `role` |
 | `bank_accounts` | `shop_id`, `bank_bin`, `bank_code`, `account_number`, `account_name`, `label`, `is_default` |
-| `provider_connections` | `shop_id`, `uuid` (nằm trong URL webhook), `provider` (sepay, pay2s, payos, simulator), `bank_account_id`, `credentials` (cast `encrypted:array`), `status`, `last_received_at` |
-| `orders` | `shop_id`, `code` (unique), `external_ref` (unique theo shop), `amount`, `paid_amount`, `status`, `description`, `customer_name`, `expires_at`, `paid_at`, `created_via`, `metadata` (json) |
-| `inbound_events` | `provider_connection_id`, `headers` (json, đã che token), `body` (text), `signature_valid`, `ip`, `received_at`. Giữ 30 ngày |
-| `transactions` | `shop_id`, `provider_connection_id`, `provider`, `external_id`, **UNIQUE(provider, external_id)**, `bank_account_id`, `direction`, `amount`, `content`, `reference_code`, `transacted_at`, `payer_name`, `payer_account`, `raw` (json), `status` (matched, unmatched, suggested, ignored, duplicate), `order_id`, `matched_by` (rule, manual, suggestion_approved), `matched_by_user_id`, `duplicate_of` |
+| `provider_connections` | `shop_id`, `uuid` (UUIDv4, nằm trong URL webhook), `provider` (sepay, pay2s, payos, simulator), `bank_account_id` (null: lấy theo số tài khoản trong payload), `label`, `credentials` (cast `encrypted:array`), `status`, `last_received_at` |
+| `orders` | `shop_id`, `bank_account_id` (tài khoản nhận tiền của đơn), `code` (unique), `external_ref` (unique theo shop), `amount`, `paid_amount`, `status`, `description`, `customer_name`, `expires_at`, `paid_at`, `paid_after_expiry`, `created_via`, `metadata` (json) |
+| `inbound_events` | `shop_id`, `provider_connection_id`, `headers` (json, đã che token), `body` (text), `signature_valid`, `ip`, `error`, `received_at`. Giữ 30 ngày |
+| `transactions` | `shop_id`, `provider_connection_id`, `inbound_event_id`, `provider`, `external_id`, **UNIQUE(shop_id, provider, external_id)**, `bank_account_id`, `direction`, `amount`, `content`, `reference_code`, `provider_code`, `transacted_at`, `payer_name`, `payer_account`, `raw` (json), `status` (matched, unmatched, suggested, ignored, duplicate), `order_id`, `matched_by` (rule, manual, suggestion_approved), `matched_by_user_id`, `matched_at`, `fingerprint` (chống trùng chéo nhà cung cấp), `duplicate_of` |
 | `match_suggestions` | `transaction_id`, `order_id`, `model_version`, `score`, `features` (json), `reason`, `status`, `decided_by`, `decided_at` |
 | `match_feedback` | `shop_id`, `transaction_id`, `order_id`, `features` (json), `label` (0 hoặc 1), `source` (approved, rejected, manual), `is_demo` |
 | `match_models` | `version`, `weights` (json), `bias`, `samples`, `precision`, `coverage`, `trained_at`, `is_active`, `scope` (global hoặc demo) |
 | `webhook_endpoints` | `shop_id`, `url`, `secret` (encrypted), `events` (json), `active`, `consecutive_failures`, `disabled_at` |
 | `webhook_deliveries` | `webhook_endpoint_id`, `event_id`, `event_type`, `payload`, `attempt`, `status`, `next_attempt_at`, `response_code`, `response_body` (2 KB), `duration_ms` |
 | `idempotency_keys` | `shop_id`, `key`, `request_hash`, `response` (json), `expires_at` |
-| `audit_logs` | `shop_id`, `user_id`, `action`, `subject_type`, `subject_id`, `meta` |
+| `audit_logs` | `shop_id`, `user_id`, `action`, `subject_type`, `subject_id`, `meta`, `ip` |
 | `personal_access_tokens` | Của Sanctum, `tokenable` là Shop |
 
 Hàng đợi, cache và session đều dùng driver `database`, vì Wasmer không có Redis.
@@ -769,3 +770,10 @@ Quy tắc:
 - `php artisan serve` không trả phản hồi trước khi chạy việc `afterResponse` (request phải chờ cả việc đó). Câu 4 của spike chỉ đo được trên Wasmer.
 - Các bẫy riêng của Wasmer gặp trong spike: xem mục 14.
 - Cấu hình deploy (`deploy/wasmer/`, `scripts/build-wasmer.sh`) và các sửa trong `config/database.php` cho Wasmer đang nằm ở nhánh `spike/wasmer`. Sẽ đưa sang `main` ở GĐ3, bỏ phần route thử.
+- Larastan mặc định chỉ đọc kiểu trả về khai báo của hàm `casts()` (`array<string, string>`), nên không thấy cast nào và coi cột `timestamp` là `string`. Đã bật `parseModelCastsMethod: true` trong `phpstan.neon`.
+- `freezeTime()` giữ cả micro giây, còn cột `timestamp` chỉ lưu đến giây: so `expires_at` với `now()` sẽ lệch. Test có so thời gian dùng `freezeSecond()`.
+
+**Đã xong:**
+- Lõi thuần (không DB): mã đơn, chuỗi VietQR kèm CRC, chuẩn hóa nội dung và tìm mã đơn (62 test).
+- Bảng dữ liệu lõi, model, enum. Tách dữ liệu theo shop bằng trait `BelongsToShop` và holder `CurrentShop` (scoped: tự xóa sau mỗi request và job). Chưa đặt shop thì không lọc, để đường nhận webhook và lệnh console chạy trên mọi shop.
+- Danh sách 76 ngân hàng ở `database/data/banks.json`. Hành động `CreateOrder`: sinh mã, sinh lại khi trùng (phân biệt với trùng `external_ref` qua tên index), hạn mặc định 30 phút.

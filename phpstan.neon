@@ -9,3 +9,6 @@ parameters:
         - config/
         - database/
         - routes/
+
+    # Đọc thân hàm casts() để biết kiểu cast thật (mặc định Larastan chỉ đọc kiểu trả về khai báo).
+    parseModelCastsMethod: true
