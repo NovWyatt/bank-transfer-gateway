@@ -42,7 +42,7 @@ final class OrderCodeExtractor
             }
         }
 
-        // Tìm chồng lấn trên chuỗi đã bỏ dấu cách, bắt cả "MBVCB123456DH7K3QXCT" lẫn "DH 7K3QX".
+        // Tìm chồng lấn trên chuỗi đã bỏ dấu cách, bắt cả "MBVCB123456DH7K3QXMCT" lẫn "DH 7K3QXM".
         $compact = str_replace(' ', '', $normalized);
         foreach ($patterns as $pattern) {
             preg_match_all('/(?=('.$pattern.'))/', $compact, $matches);

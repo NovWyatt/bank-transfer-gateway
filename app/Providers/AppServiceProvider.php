@@ -4,7 +4,10 @@ namespace App\Providers;
 
 use App\Payments\Banks\BankDirectory;
 use App\Tenancy\CurrentShop;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,5 +33,10 @@ class AppServiceProvider extends ServiceProvider
         // Ngoài production: báo lỗi khi lazy load, gán thuộc tính không khai báo,
         // hoặc đọc cột không có trong kết quả truy vấn.
         Model::shouldBeStrict(! $this->app->isProduction());
+
+        // Mỗi kết nối nhận tối đa 120 webhook/phút; dư sức cho một shop, chặn dội request vào bảng inbound_events.
+        RateLimiter::for('hooks', fn (Request $request) => Limit::perMinute(120)->by(
+            'hooks:'.($request->route('uuid') ?? $request->ip()),
+        ));
     }
 }

@@ -214,7 +214,13 @@ Mỗi adapter có **fixture JSON** lấy từ ví dụ trong tài liệu chính 
 - Bảng `transactions` có `UNIQUE(shop_id, provider, external_id)`, nên retry của nhà cung cấp không ghi hai lần.
   - Khóa có `shop_id`: nếu chỉ là `(provider, external_id)` thì một shop có thể tự ký webhook giả (họ biết secret của chính mình) mang `external_id` của shop khác, làm giao dịch thật của shop kia bị coi là trùng.
 
-**Trùng chéo giữa các nhà cung cấp:** một tài khoản ngân hàng có thể nối cùng lúc qua SePay và Pay2S, khi đó một giao dịch đến hai lần. Thêm khóa phụ: `bank_account_id + reference/transactionNumber + amount + thời điểm làm tròn phút`. Nếu trùng thì đánh dấu `duplicate_of`, không khớp lần hai.
+**Trùng chéo giữa các nhà cung cấp:** một tài khoản ngân hàng có thể nối cùng lúc qua SePay và Pay2S, khi đó một giao dịch đến hai lần. Thêm khóa phụ `fingerprint` = sha256(`bank_account_id | amount | nội dung đã chuẩn hóa | thời điểm làm tròn phút`). Nếu trùng thì đánh dấu `duplicate_of`, không khớp lần hai.
+- Không dùng mã tham chiếu, vì chưa chắc `referenceCode` của SePay và `transactionNumber` của Pay2S là cùng một mã.
+- Chỉ coi là trùng khi bản kia đến từ **nhà cung cấp khác**: hai lần chuyển giống hệt nhau qua cùng một nhà cung cấp là hai giao dịch thật.
+- Giới hạn: nếu hai nhà cung cấp ghi giờ lệch nhau qua mốc phút thì không bắt được. **[cần kiểm tra]** khi nối thật cả hai.
+- Hai bản đến cùng lúc: `SELECT … FOR UPDATE` theo fingerprint giữ gap lock, một bên gặp deadlock và `DB::transaction(…, 3)` chạy lại, lần sau thấy bản gốc.
+
+**Quy tắc so số tiền đã chốt (18/10/2026):** đơn đã `paid` hoặc `overpaid` mà nhận thêm tiền thì giao dịch để **chưa khớp** cho người duyệt, không tự chuyển sang `overpaid`. Ân hạn tính theo giờ ngân hàng ghi nhận (`transactedAt`), không theo lúc webhook đến.
 
 **Không khớp được:** giao dịch chuyển sang `unmatched`, rồi sinh gợi ý (mục 8).
 
@@ -787,3 +793,4 @@ Quy tắc:
 - Bảng dữ liệu lõi, model, enum. Tách dữ liệu theo shop bằng trait `BelongsToShop` và holder `CurrentShop` (scoped: tự xóa sau mỗi request và job). Chưa đặt shop thì không lọc, để đường nhận webhook và lệnh console chạy trên mọi shop.
 - Danh sách 76 ngân hàng ở `database/data/banks.json`. Hành động `CreateOrder`: sinh mã, sinh lại khi trùng (phân biệt với trùng `external_ref` qua tên index), hạn mặc định 30 phút.
 - Adapter SePay (HMAC hoặc API key), Pay2S (Bearer) và Simulator (định dạng SePay, chỉ HMAC), cùng `PayloadReader` đọc trường theo kiểu và đổi giờ Việt Nam sang UTC. Fixture chép nguyên văn từ tài liệu chính thức ở `tests/Fixtures/providers/`.
+- Đường nhận `POST /hooks/{provider}/{uuid}` (không session, giới hạn 120 request/phút mỗi kết nối): xác thực, lưu `inbound_events` với header bí mật đã che, ghi giao dịch chống trùng, bỏ qua tiền ra, đánh dấu trùng chéo nhà cung cấp, khớp đơn bằng quy tắc với đơn đã khóa `lockForUpdate`.

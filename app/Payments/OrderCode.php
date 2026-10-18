@@ -5,7 +5,7 @@ namespace App\Payments;
 use InvalidArgumentException;
 
 /**
- * Mã đơn: tiền tố của shop (2–4 chữ cái) + 6 ký tự ngẫu nhiên, ví dụ DH7K3QX.
+ * Mã đơn: tiền tố của shop (2–4 chữ cái) + 6 ký tự ngẫu nhiên, ví dụ DH7K3QXM.
  *
  * Không có gạch hay dấu, vì nhiều ngân hàng xóa ký tự đặc biệt, đổi chữ hoa hoặc cắt nội dung.
  */
