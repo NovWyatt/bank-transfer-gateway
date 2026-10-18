@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ReceiveWebhookController;
+use App\Http\Controllers\TelegramWebhookController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -11,3 +12,6 @@ Route::post('/hooks/{provider}/{uuid}', ReceiveWebhookController::class)
     ->whereIn('provider', ['sepay', 'pay2s', 'payos', 'simulator'])
     ->whereUuid('uuid')
     ->name('hooks.receive');
+
+// Update của bot Telegram, xác thực bằng header X-Telegram-Bot-Api-Secret-Token.
+Route::post('/telegram/webhook', TelegramWebhookController::class)->name('telegram.webhook');

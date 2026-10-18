@@ -7,6 +7,7 @@ use App\Enums\WebhookDeliveryStatus;
 use App\Models\WebhookAttempt;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookEndpoint;
+use App\Telegram\TelegramNotifier;
 use App\Webhooks\Security\UnsafeUrl;
 use App\Webhooks\Security\UrlGuard;
 use GuzzleHttp\Exception\TransferException;
@@ -21,6 +22,7 @@ final class WebhookSender
 {
     public function __construct(
         private readonly UrlGuard $guard,
+        private readonly TelegramNotifier $telegram,
     ) {}
 
     public function send(WebhookDelivery $delivery, DeliveryTrigger $trigger): WebhookAttempt
@@ -148,6 +150,10 @@ final class WebhookSender
         }
 
         $locked->save();
+
+        if ($locked->wasChanged('active')) {
+            $this->telegram->endpointDisabled($locked);
+        }
     }
 
     private function skip(WebhookDelivery $delivery): WebhookAttempt

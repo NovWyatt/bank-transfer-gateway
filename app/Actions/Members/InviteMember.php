@@ -21,9 +21,11 @@ final class InviteMember
     public const TOKEN_LENGTH = 48;
 
     /**
+     * $by là null khi lời mời do hệ thống tạo: lời mời owner đầu tiên từ /internal/bootstrap.
+     *
      * @throws DomainException khi email đã là thành viên
      */
-    public function handle(Shop $shop, string $email, ShopRole $role, User $by, ?string $ip = null): IssuedInvitation
+    public function handle(Shop $shop, string $email, ShopRole $role, ?User $by, ?string $ip = null): IssuedInvitation
     {
         $email = ShopInvitation::normalizeEmail($email);
 
@@ -46,7 +48,7 @@ final class InviteMember
             $invitation->fill([
                 'role' => $role,
                 'token_hash' => ShopInvitation::hashToken($token),
-                'invited_by' => $by->getKey(),
+                'invited_by' => $by?->getKey(),
                 'expires_at' => now()->addDays(ShopInvitation::TTL_DAYS),
             ])->save();
 

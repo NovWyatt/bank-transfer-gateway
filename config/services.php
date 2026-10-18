@@ -28,6 +28,15 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Bot báo tiền về cho chủ shop (docs/KE-HOACH.md, mục 5.9). Wyatt tạo bot qua @BotFather và tự dán token.
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        // Tên bot không có @, để dựng link t.me/<bot>?start=<mã>.
+        'bot_username' => env('TELEGRAM_BOT_USERNAME'),
+        // Telegram gửi lại chuỗi này trong header X-Telegram-Bot-Api-Secret-Token ở mỗi update.
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

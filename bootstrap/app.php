@@ -3,6 +3,7 @@
 use App\Api\ApiError;
 use App\Http\Middleware\EnsureIdempotency;
 use App\Http\Middleware\PublicPageHeaders;
+use App\Http\Middleware\VerifyInternalSignature;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             Route::middleware('throttle:hooks')->group(base_path('routes/hooks.php'));
+            Route::middleware('throttle:internal')->group(base_path('routes/internal.php'));
             Route::middleware(['throttle:pay', PublicPageHeaders::class])->group(base_path('routes/pay.php'));
             // Nhóm "api": không session, không cookie, không CSRF.
             Route::middleware('api')->prefix('api/v1')->name('api.v1.')->group(base_path('routes/api.php'));
@@ -32,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
             'idempotent' => EnsureIdempotency::class,
+            'internal' => VerifyInternalSignature::class,
         ]);
 
         // Khách chưa đăng nhập vào dashboard thì về trang đăng nhập của panel; API thì trả 401 JSON.
@@ -39,7 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*', 'hooks/*') || $request->expectsJson(),
+            fn (Request $request) => $request->is('api/*', 'hooks/*', 'internal/*', 'telegram/*') || $request->expectsJson(),
         );
 
         // API trả lỗi cùng một dạng {"message", "code"} để phía shop xử lý theo "code".

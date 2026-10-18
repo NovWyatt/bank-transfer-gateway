@@ -12,6 +12,7 @@ use App\Models\Transaction;
 use App\Payments\Matching\RuleMatcher;
 use App\Payments\Memo\MemoNormalizer;
 use App\Payments\Providers\NormalizedTransaction;
+use App\Telegram\TelegramNotifier;
 use App\Webhooks\WebhookDispatcher;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ final class RecordTransaction
     public function __construct(
         private readonly RuleMatcher $matcher,
         private readonly WebhookDispatcher $webhooks,
+        private readonly TelegramNotifier $telegram,
     ) {}
 
     /**
@@ -90,7 +92,7 @@ final class RecordTransaction
             if ($transaction->status === TransactionStatus::Unmatched) {
                 $order = $this->matcher->match($transaction, $connection->shop);
 
-                // Ghi webhook trong cùng transaction: deadlock chạy lại thì bản ghi của lượt hỏng cũng mất.
+                // Ghi webhook và tin Telegram trong cùng transaction: deadlock chạy lại thì bản ghi của lượt hỏng cũng mất.
                 $type = $order === null ? null : WebhookEventType::forOrderStatus($order->status);
 
                 if ($order === null) {
@@ -98,6 +100,8 @@ final class RecordTransaction
                 } elseif ($type !== null) {
                     $this->webhooks->order($type, $order, $transaction);
                 }
+
+                $this->telegram->transaction($connection->shop, $transaction, $order);
             }
 
             return $transaction;

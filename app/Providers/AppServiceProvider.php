@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\Shop;
 use App\Models\User;
 use App\Payments\Banks\BankDirectory;
+use App\Telegram\TelegramClient;
 use App\Tenancy\CurrentShop;
 use App\Webhooks\Security\HostResolver;
 use App\Webhooks\Security\SystemHostResolver;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -37,6 +39,11 @@ class AppServiceProvider extends ServiceProvider
             $app->make(HostResolver::class),
             allowPrivate: ! $app->isProduction() && (bool) config('webhooks.allow_private_targets'),
         ));
+
+        $this->app->bind(TelegramClient::class, fn () => new TelegramClient(
+            config('services.telegram.bot_token'),
+            config('services.telegram.bot_username'),
+        ));
     }
 
     /**
@@ -47,6 +54,14 @@ class AppServiceProvider extends ServiceProvider
         // Ngoài production: báo lỗi khi lazy load, gán thuộc tính không khai báo,
         // hoặc đọc cột không có trong kết quả truy vấn.
         Model::shouldBeStrict(! $this->app->isProduction());
+
+        // Wasmer giữ TLS ở edge rồi chuyển request vào app bằng http. Không ép thì route() và link mời ra http://.
+        if ($this->app->isProduction()) {
+            URL::forceScheme('https');
+        }
+
+        // /internal/* đã ký HMAC; giới hạn theo IP chỉ để request rác không tốn tài nguyên. Worker gọi 1 lần/phút.
+        RateLimiter::for('internal', fn (Request $request) => Limit::perMinute(30)->by('internal:'.$request->ip()));
 
         // Mỗi kết nối nhận tối đa 120 webhook/phút; dư sức cho một shop, chặn dội request vào bảng inbound_events.
         RateLimiter::for('hooks', fn (Request $request) => Limit::perMinute(120)->by(

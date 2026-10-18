@@ -10,12 +10,14 @@ use App\Models\Shop;
 use App\Models\WebhookAttempt;
 use App\Models\WebhookDelivery;
 use App\Models\WebhookEndpoint;
+use App\Telegram\SendTelegramMessage;
 use App\Webhooks\DeliverDueWebhooks;
 use App\Webhooks\Security\HostResolver;
 use App\Webhooks\WebhookDispatcher;
 use App\Webhooks\WebhookSender;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\Support\StaticHostResolver;
 
 /*
@@ -157,8 +159,10 @@ it('nhật ký giữ 2 KB đầu của phản hồi, cắt đúng ranh giới k�
         ->and(mb_check_encoding($body, 'UTF-8'))->toBeTrue();
 });
 
-it('tự tắt endpoint khi hỏng liên tiếp đủ số lần và đủ lâu', function (): void {
+it('tự tắt endpoint khi hỏng liên tiếp đủ số lần và đủ lâu, rồi báo Telegram một lần', function (): void {
+    Queue::fake();
     Http::fake(['*' => Http::response('', 503)]);
+    $this->shop->forceFill(['telegram_chat_id' => '5550001'])->save();
     $this->endpoint->forceFill(['consecutive_failures' => 19, 'failing_since' => now()->subHours(25)])->save();
 
     deliverDue();
@@ -169,15 +173,23 @@ it('tự tắt endpoint khi hỏng liên tiếp đủ số lần và đủ lâu'
         ->and($endpoint->consecutive_failures)->toBe(20)
         ->and($endpoint->disabled_at)->not->toBeNull()
         ->and($endpoint->disabled_reason)->toContain('20 lần');
+    Queue::assertPushed(SendTelegramMessage::class, fn (SendTelegramMessage $job): bool => str_contains($job->text, 'Webhook đã tự tắt'));
+
+    // Gửi tay lúc đã tắt vẫn hỏng: không báo lại.
+    app(WebhookSender::class)->send($this->delivery->fresh(), DeliveryTrigger::Manual);
+    Queue::assertPushed(SendTelegramMessage::class, 1);
 });
 
 it('một đợt sập ngắn không làm tắt endpoint dù hỏng nhiều lần', function (): void {
+    Queue::fake();
     Http::fake(['*' => Http::response('', 503)]);
+    $this->shop->forceFill(['telegram_chat_id' => '5550001'])->save();
     $this->endpoint->forceFill(['consecutive_failures' => 50, 'failing_since' => now()->subHours(2)])->save();
 
     deliverDue();
 
     expect($this->endpoint->fresh()->active)->toBeTrue();
+    Queue::assertNothingPushed();
 });
 
 it('gửi thành công thì xóa chuỗi hỏng', function (): void {
