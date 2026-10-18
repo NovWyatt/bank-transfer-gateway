@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Không hủy giữa chừng trên main: lần chạy đó có thể đang deploy.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   tests:
@@ -73,8 +74,57 @@ jobs:
       - name: Larastan
         run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
 
+      # Node 24 cho test của Worker (node --test nhận glob từ Node 21) và test script mẫu của examples/webhooks/node.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Pest
         run: vendor/bin/pest
+
+      - name: Test Worker edge/
+        run: node --test "edge/test/*.test.mjs"
+
+  deploy:
+    name: Deploy lên Wasmer
+    needs: [tests, secrets]
+    # Chỉ chạy khi push lên main và Wyatt đã đặt biến WASMER_OWNER (scripts/setup-production.sh ci).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.WASMER_OWNER != ''
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      APP_URL: ${{ vars.APP_URL || 'https://bank-transfer-gateway.wasmer.app' }}
+      WASMER_VERSION: v7.5.0
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, mbstring, intl, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Đóng gói build/wasmer
+        run: bash scripts/build-wasmer.sh
+
+      - name: Cài Wasmer CLI
+        run: |
+          curl -sSfL https://get.wasmer.io | sh -s "$WASMER_VERSION"
+          echo "$HOME/.wasmer/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy
+        env:
+          WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+        run: wasmer deploy --dir build/wasmer --non-interactive --owner "${{ vars.WASMER_OWNER }}"
+
+      # Job post-deployment của Wasmer không thấy secret DB_* (spike GĐ0), nên migrate qua đường có ký.
+      - name: Migrate và đăng ký webhook Telegram
+        env:
+          INTERNAL_SECRET: ${{ secrets.INTERNAL_DEPLOY_SECRET }}
+        run: bash scripts/internal-call.sh /internal/deploy
 
   secrets:
     name: Quét bí mật (gitleaks)

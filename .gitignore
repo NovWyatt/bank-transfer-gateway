@@ -31,3 +31,7 @@ Thumbs.db
 /.claude/settings.local.json
 /.taste-skill/
 /build/
+
+# Worker Cloudflare (edge/)
+/edge/node_modules
+/edge/.wrangler

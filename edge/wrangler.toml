@@ -1,0 +1,19 @@
+# Worker btg-edge trên tài khoản Cloudflare rirtar.lofi@gmail.com (docs/KE-HOACH.md, mục 10a).
+# Trước mỗi lần deploy: `npx wrangler whoami` phải ra rirtar.lofi@gmail.com.
+name = "btg-edge"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Chỉ chạy theo cron, không cần địa chỉ *.workers.dev.
+workers_dev = false
+preview_urls = false
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+# Địa chỉ app trên Wasmer. Đổi thành https://pay.wyattos.cyou khi tên miền riêng chạy.
+APP_URL = "https://bank-transfer-gateway.wasmer.app"
+
+[observability]
+enabled = true

@@ -20,6 +20,11 @@ it('chấp nhận chữ ký đúng và từ chối khi đổi bất kỳ phần 
         ->and(InternalSignature::verify($header, 'bi-mat', 'POST', '/internal/tick', '{"a":1}', NOW))->toBeFalse();
 });
 
+it('khớp vector mà Worker edge/ kiểm trong edge/test/index.test.mjs', function (): void {
+    expect(InternalSignature::header('bi-mat-edge', 'POST', '/internal/tick', '', 1_760_000_000))
+        ->toBe('t=1760000000,v1=067e7cebc52a503cf48e6987bd10182294831d264abe48a07419cc57066466f8');
+});
+
 it('từ chối chữ ký lệch giờ quá 5 phút', function (int $skew, bool $valid): void {
     $header = InternalSignature::header('bi-mat', 'POST', '/internal/tick', '', NOW);
 

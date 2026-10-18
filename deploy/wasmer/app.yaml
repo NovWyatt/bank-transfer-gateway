@@ -1,0 +1,46 @@
+# App production trên Wasmer Edge (docs/KE-HOACH.md, mục 10). scripts/build-wasmer.sh chép file này vào build/wasmer.
+#
+# Bí mật KHÔNG nằm ở đây: Wyatt đặt bằng scripts/wasmer-secrets.sh (wasmer app secrets create), gồm
+# APP_KEY, INTERNAL_TICK_SECRET, INTERNAL_DEPLOY_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET.
+# Secret mới chỉ có hiệu lực sau lần deploy kế tiếp.
+#
+# Không có mục jobs: cron của Wasmer không chạy (spike GĐ0). Nhịp mỗi phút đến từ Worker edge/,
+# migrate chạy qua POST /internal/deploy do CI gọi sau khi deploy.
+kind: wasmer.io/App.v0
+name: bank-transfer-gateway
+owner: novwyatt
+package: .
+
+# MySQL của Wasmer chỉ có ở us-losa1, fr-roub1, ca-beau1, và app có DB chỉ được chọn một vùng.
+locality:
+  regions:
+    - us-losa1
+
+# PHP built-in server xử lý từng request một.
+scaling:
+  mode: single_concurrency
+
+capabilities:
+  database:
+    engine: mysql
+
+env:
+  APP_NAME: "Bank Transfer Gateway"
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_URL: https://bank-transfer-gateway.wasmer.app
+  APP_LOCALE: vi
+  APP_FALLBACK_LOCALE: en
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: info
+  # Thư mục app chỉ đọc; view biên dịch ghi vào /tmp.
+  VIEW_COMPILED_PATH: /tmp/views
+  SESSION_DRIVER: database
+  SESSION_SECURE_COOKIE: "true"
+  CACHE_STORE: database
+  QUEUE_CONNECTION: database
+  DB_CONNECTION: mysql
+  # MySQL của Wasmer dùng CA riêng: bật TLS nhưng không kiểm chuỗi chứng chỉ.
+  DB_SSL_VERIFY: "false"
+  MYSQL_ATTR_SSL_CA: /etc/ssl/cacert.pem
+  WEBHOOKS_ALLOW_PRIVATE_TARGETS: "false"
