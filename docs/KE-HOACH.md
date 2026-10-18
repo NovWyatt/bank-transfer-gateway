@@ -147,7 +147,7 @@ Khách chuyển khoản ─► Tài khoản ngân hàng của shop
 ```
 
 **Nguyên tắc:**
-- Bước 1–6 chạy **ngay trong request**: chỉ là vài câu SQL, không gọi ra ngoài.
+- Bước 1–6 chạy **ngay trong request**: chỉ là vài câu SQL, không gọi ra ngoài. Không dùng `afterResponse()`: spike cho thấy trên Wasmer nó giữ request lại (mục 10).
 - Phần gọi ra ngoài (webhook, Telegram) đi qua **hàng đợi**.
 - Nhờ vậy, việc "đơn chuyển sang đã thanh toán" không phụ thuộc vào worker hàng đợi, vốn là điểm yếu trên Wasmer.
 
@@ -469,8 +469,8 @@ Hướng thiết kế (màu, phông) chọn ngay ở GĐ1 khi dựng `/pay`. Tra
 
 | Thành phần | Nơi đặt | Giới hạn gói miễn phí |
 |---|---|---|
-| App Laravel | Wasmer Edge, gói Hobby | 100 nghìn request/tháng, 1 GB, PHP 8.3 (WebAssembly). Số liệu từ lần tra trước: **[cần kiểm tra lại]** |
-| Database | TiDB Cloud Starter, vùng Singapore | 5 GiB và 50 triệu RU/tháng cho mỗi cluster. **[cần kiểm tra lại]** Kết nối bằng TLS (`MYSQL_ATTR_SSL_CA`) |
+| App Laravel | Wasmer Edge, gói Hobby, vùng `us-losa1` | Trang giá ghi 1 triệu request/tháng, nhưng banner trên cùng trang và trang Laravel ghi 100 nghìn: **[cần kiểm tra trong dashboard]**. PHP 8.3.4 (WebAssembly). **Không có vùng châu Á** |
+| Database | **Chờ Wyatt chốt** (xem "Kết quả spike" bên dưới). Đề xuất: MySQL của Wasmer, cùng vùng với app | MySQL Wasmer: 100 MB, không backup. TiDB Starter: 5 GiB và 50 triệu RU/tháng, có Oregon và Singapore |
 | Tên miền | Subdomain của `wyattos.cyou` (ví dụ `pay.wyattos.cyou`), DNS ở Cloudflare, tài khoản rirtar.lofi@gmail.com | Xem mục 10a |
 | Lối nhận dự phòng (không bắt buộc) | Cloudflare Worker và Queues (gói Free: lưu 24 giờ, 100 nghìn request/ngày) | Đứng trước app để đỡ lúc app khởi động nguội |
 
@@ -491,7 +491,36 @@ Hướng thiết kế (màu, phông) chọn ngay ở GĐ1 khi dựng `/pay`. Tra
 - Cron có thể dùng dịch vụ ngoài miễn phí, như cron-job.org (1 phút một lần), gọi `/internal/tick`.
 - (1) hỏng thì thử MySQL đi kèm Wasmer (100 MB).
 
-**Hàng đợi khi không có worker chạy liên tục:** `QUEUE_CONNECTION=database`. Mỗi phút, lịch chạy `queue:work --stop-when-empty --max-time=50`.
+### Kết quả spike (18/10/2026)
+
+App thử `btg-spike` (vùng `us-losa1`), mã ở nhánh `spike/wasmer`.
+
+| Câu | Kết quả | Chi tiết |
+|---|---|---|
+| 1. Database | ✅ với MySQL của Wasmer | MySQL 8.0.45, TLS `TLS_AES_256_GCM_SHA384`, đọc và ghi được. Cần `DB_SSL_VERIFY=false` (CA riêng) và `MYSQL_ATTR_SSL_CA` để bật TLS. Mỗi request khoảng 0,68 giây khi gọi từ Việt Nam. TiDB chưa thử, vì cần Wyatt tạo tài khoản |
+| 2. HTTPS ra ngoài | ✅ | Gọi `api.telegram.org` mất 512 ms. Có đủ extension: pdo_mysql, openssl, curl, mbstring, intl, bcmath, sodium, gd, zip |
+| 3. Lịch mỗi phút | ❌ | Job `fetch` không chạy lần nào, cả với `'* * * * *'` lẫn `1m`. Job `execute` chỉ chạy một lần ngay sau deploy. Bản cấu hình Wasmer biên dịch (`json_config`) không có phần `jobs`. Ngoài ra `schedule:run` luôn hỏng, vì nó tìm đường dẫn `php` bằng `exec()` |
+| 4. `afterResponse()` | ❌ | Không có `fastcgi_finish_request` (SAPI là `cli-server`). Request bị giữ tới khi việc chạy sau xong (2,7 giây với `sleep 2`), và lỗi của việc đó còn bị nối vào cuối nội dung phản hồi |
+
+**Hệ quả cho thiết kế:**
+- **Không dùng `afterResponse`, `Schedule::command`, `schedule:run`, `Process` hay bất kỳ thứ gì fork tiến trình.** Mọi việc chạy trong tiến trình hiện tại.
+- **Nhịp mỗi phút đến từ bên ngoài:** một cron gọi `POST /internal/tick`, ký HMAC trong header. Route này làm hai việc:
+  1. Chạy các việc đến hạn của `Schedule` bằng `dueEvents()`, chỉ dùng `Schedule::call` hoặc `Schedule::job`.
+  2. Xử lý hàng đợi bằng `queue:work --stop-when-empty --max-time=20`, gọi trong tiến trình.
+- **Đề xuất nguồn cron:** Cloudflare Worker cron trên tài khoản rirtar.lofi (mục 10a, phần 4). Mã để trong `edge/` của repo. Dự phòng: cron-job.org.
+- **Migration khi deploy:** job `post-deployment` có chạy, nhưng không thấy secret `DB_*` của app nên migrate vào một database khác. Thay bằng bước CI gọi `POST /internal/migrate` có ký HMAC, ngay sau khi deploy.
+- **Bí mật không bao giờ nằm trong URL:** log truy cập của Wasmer ghi nguyên URL, kể cả query string.
+- `scaling.mode: single_concurrency`: mỗi instance xử lý một request một lúc, nên `/internal/tick` phải ngắn (dưới 20 giây).
+
+**Database (Wyatt chốt):**
+
+| Phương án | Ưu | Nhược |
+|---|---|---|
+| **MySQL của Wasmer** (đề xuất) | Cùng vùng với app, đã chạy thật trong spike, không cần thêm tài khoản, có `SKIP LOCKED` | 100 MB, không backup, CA riêng (không kiểm được chứng chỉ) |
+| TiDB Starter ở Oregon, ghim app ở `us-hillsboro` | 5 GiB, TLS chuẩn | Thêm tài khoản; không có `SKIP LOCKED` (đặt `DB_SERVER_VERSION=5.7.25`); chưa thử |
+| TiDB Starter ở Singapore (kế hoạch cũ) | Gần khách Việt Nam | App ở Mỹ nên mỗi câu SQL đi xuyên Thái Bình Dương |
+
+**Hàng đợi khi không có worker chạy liên tục:** `QUEUE_CONNECTION=database`. Mỗi phút, `/internal/tick` chạy `queue:work --stop-when-empty --max-time=20` trong tiến trình (xem "Kết quả spike").
 
 **CI và triển khai:** GitHub Actions gồm hai job.
 - `tests`: Pint `--test`, Larastan, Pest với service MySQL.
@@ -642,6 +671,14 @@ Mỗi giai đoạn: commit nhỏ, viết tiếng Việt. Cuối giai đoạn c�
 - Composer: gọi `php.exe composer.phar`, đừng dùng `composer.cmd` (làm mất ký tự `^`). Biến môi trường `COMPOSER` bị Composer dùng riêng, nên script đặt tên là `COMPOSER_BIN`.
 - Trên điện thoại, ô chọn có chữ dài làm form tràn ngang. Dùng `grid-cols-1`, và `min-w-0` cho fieldset.
 - Lần trước **chưa deploy thật lên Wasmer**, chỉ chạy `wasmer run` ở máy. Vì vậy spike ở giai đoạn 0 là bắt buộc.
+- **Gặp ở spike lần này (18/10/2026):**
+  - WebAssembly không fork được tiến trình. Riêng việc khai báo `Schedule::command(...)` trong `routes/console.php` đã làm hỏng mọi lệnh artisan, kể cả `migrate` gọi qua HTTP. Lý do: Laravel tìm đường dẫn `php` bằng `exec()`.
+  - Job `execute` của Wasmer không nhận được secret `DB_*` của app.
+  - Log truy cập ghi nguyên URL, kể cả query string.
+  - Trang thuộc nhóm `web` gắn cookie session và XSRF. Trang công khai phải đi nhóm middleware riêng.
+  - Wasmer bơm tên database vào `DB_NAME`, không phải `DB_DATABASE`.
+  - Polyfill `Pdo\Mysql` trên PHP 8.3 bản Windows thiếu hằng `ATTR_SSL_VERIFY_SERVER_CERT`. Dùng `PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT`.
+  - `wasmer deploy` báo 500 ở `/` khi app chưa có `APP_KEY` hoặc chưa migrate. Secret mới chỉ có hiệu lực sau khi redeploy.
 
 ---
 
@@ -663,10 +700,10 @@ Push `profile.yml` và `media/` lên thì GitHub Actions tự vẽ lại profile
 - payOS: cá nhân có đăng ký được không; lịch retry.
 - Casso v2: cách ký webhook.
 - Wasmer:
-  - Kết quả 4 câu hỏi của spike.
-  - Các extension cần có: `pdo_mysql`, `openssl`, `curl`, `mbstring`, `intl`, `bcmath`.
-  - Giới hạn gói Hobby.
-- TiDB Starter: giới hạn hiện tại; có hỗ trợ `SELECT … FOR UPDATE` và khóa ngoại trên bản đang dùng không.
+  - ~~Kết quả 4 câu hỏi của spike~~: đã có (mục 10, "Kết quả spike").
+  - ~~Các extension cần có~~: có đủ.
+  - Giới hạn gói Hobby: 1 triệu hay 100 nghìn request/tháng (xem trong dashboard).
+- TiDB Starter (chỉ khi chọn TiDB): có `SELECT … FOR UPDATE` và khóa ngoại (từ v6.6), không có `SKIP LOCKED`, `AUTO_INCREMENT` không liên tục, kết nối mở quá 30 phút có thể bị cắt.
 - ~~Filament và Scramble có tương thích Laravel 13 không~~: có, tra trên Packagist ngày 18/10/2026 (mục 9).
 - Chuỗi VietQR quét đúng trên ít nhất hai app ngân hàng.
 - Cloudflare (mục 10a):
@@ -710,7 +747,12 @@ Quy tắc:
 - Repo public https://github.com/NovWyatt/bank-transfer-gateway. CI xanh: test trên MySQL 8.4, cộng một job quét gitleaks toàn bộ lịch sử.
 - taste-skill đã liên kết vào `.claude/skills/` (mục 9a).
 
-**Còn lại:** spike Wasmer. Mã thử nằm ở nhánh `spike/wasmer` và đã chạy đúng ở máy.
+- Spike Wasmer xong, trả lời đủ 4 câu (mục 10, "Kết quả spike"): câu 1 và 2 đạt, câu 3 và 4 không đạt, đã có phương án thay.
+
+**Còn lại (chờ Wyatt):**
+- Chốt database: MySQL của Wasmer (đề xuất) hay TiDB.
+- Chốt nguồn cron: Cloudflare Worker (đề xuất, cần `wrangler login` bằng rirtar.lofi) hay cron-job.org.
+- Xóa app thử `btg-spike` trên Wasmer (cùng database 100 MB của nó) sau khi đã xem kết quả.
 
 **Bẫy gặp phải:**
 - Khung Laravel 13 kèm `CLAUDE.md` và `AGENTS.md` dặn agent chạy script cài PHP tải từ php.new, rồi cài Laravel Boost. Đã thay bằng hướng dẫn riêng của dự án và không chạy các lệnh đó.
@@ -719,3 +761,5 @@ Quy tắc:
 - `ubuntu-latest` chuyển sang Ubuntu 26 từ 19/10/2026, nên CI ghim `ubuntu-24.04`.
 - MariaDB của Larabox chạy giờ hệ thống +07:00, làm cột `useCurrent()` lệch 7 giờ so với `now()` của app. Đã đặt `timezone => +00:00` cho kết nối mysql, có test kiểm tra.
 - `php artisan serve` không trả phản hồi trước khi chạy việc `afterResponse` (request phải chờ cả việc đó). Câu 4 của spike chỉ đo được trên Wasmer.
+- Các bẫy riêng của Wasmer gặp trong spike: xem mục 14.
+- Cấu hình deploy (`deploy/wasmer/`, `scripts/build-wasmer.sh`) và các sửa trong `config/database.php` cho Wasmer đang nằm ở nhánh `spike/wasmer`. Sẽ đưa sang `main` ở GĐ3, bỏ phần route thử.
