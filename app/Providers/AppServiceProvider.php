@@ -60,9 +60,6 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // /internal/* đã ký HMAC; giới hạn theo IP chỉ để request rác không tốn tài nguyên. Worker gọi 1 lần/phút.
-        RateLimiter::for('internal', fn (Request $request) => Limit::perMinute(30)->by('internal:'.$request->ip()));
-
         // Mỗi kết nối nhận tối đa 120 webhook/phút; dư sức cho một shop, chặn dội request vào bảng inbound_events.
         RateLimiter::for('hooks', fn (Request $request) => Limit::perMinute(120)->by(
             'hooks:'.($request->route('uuid') ?? $request->ip()),

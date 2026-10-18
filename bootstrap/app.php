@@ -23,7 +23,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             Route::middleware('throttle:hooks')->group(base_path('routes/hooks.php'));
-            Route::middleware('throttle:internal')->group(base_path('routes/internal.php'));
+            // Không throttle: limiter lưu trong bảng cache, mà /internal/deploy phải chạy được khi DB còn trống
+            // (lần deploy đầu). Chữ ký HMAC đã loại request rác mà không đụng DB.
+            Route::group([], base_path('routes/internal.php'));
             Route::middleware(['throttle:pay', PublicPageHeaders::class])->group(base_path('routes/pay.php'));
             // Nhóm "api": không session, không cookie, không CSRF.
             Route::middleware('api')->prefix('api/v1')->name('api.v1.')->group(base_path('routes/api.php'));

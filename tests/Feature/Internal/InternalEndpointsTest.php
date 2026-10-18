@@ -81,6 +81,12 @@ it('đường nội bộ trả 404 khi chưa đặt secret', function (): void {
     internalPost('/internal/deploy', 'deploy-secret-test')->assertNotFound();
 });
 
+it('deploy không qua middleware nào cần DB, vì lần deploy đầu DB còn trống', function (): void {
+    $middleware = app('router')->getRoutes()->getByName('internal.deploy')->gatherMiddleware();
+
+    expect(collect($middleware)->filter(fn (string $m): bool => str_starts_with($m, 'throttle') || str_contains($m, 'Session'))->all())->toBe([]);
+});
+
 it('deploy chạy migrate và bỏ qua Telegram khi chưa có token', function (): void {
     config(['services.telegram.bot_token' => null]);
 
