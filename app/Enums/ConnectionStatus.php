@@ -2,7 +2,10 @@
 
 namespace App\Enums;
 
-enum ConnectionStatus: string
+use Filament\Support\Contracts\HasColor;
+use Filament\Support\Contracts\HasLabel;
+
+enum ConnectionStatus: string implements HasColor, HasLabel
 {
     /** Nhận webhook bình thường. */
     case Active = 'active';
@@ -15,6 +18,19 @@ enum ConnectionStatus: string
         return match ($this) {
             self::Active => 'Đang nhận',
             self::Paused => 'Tạm dừng',
+        };
+    }
+
+    public function getLabel(): string
+    {
+        return $this->label();
+    }
+
+    public function getColor(): string
+    {
+        return match ($this) {
+            self::Active => 'success',
+            self::Paused => 'gray',
         };
     }
 }

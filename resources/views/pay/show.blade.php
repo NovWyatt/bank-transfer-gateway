@@ -38,6 +38,7 @@
     <title>{{ $title }} · {{ $pay->shopName }}</title>
     <link rel="preload" href="{{ asset('fonts/hanken-grotesk/hanken-grotesk-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="{{ asset('fonts/hanken-grotesk/hanken-grotesk-vietnamese.woff2') }}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{{ asset('css/fonts.css') }}?v={{ filemtime(public_path('css/fonts.css')) }}">
     <link rel="stylesheet" href="{{ asset('css/pay.css') }}?v={{ filemtime(public_path('css/pay.css')) }}">
     <script src="{{ asset('js/pay.js') }}?v={{ filemtime(public_path('js/pay.js')) }}" defer></script>
     @if ($pay->acceptsTransfer())

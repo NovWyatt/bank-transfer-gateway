@@ -2,7 +2,10 @@
 
 namespace App\Enums;
 
-enum TransactionStatus: string
+use Filament\Support\Contracts\HasColor;
+use Filament\Support\Contracts\HasLabel;
+
+enum TransactionStatus: string implements HasColor, HasLabel
 {
     case Matched = 'matched';
     case Unmatched = 'unmatched';
@@ -22,6 +25,21 @@ enum TransactionStatus: string
             self::Suggested => 'Có gợi ý',
             self::Ignored => 'Bỏ qua',
             self::Duplicate => 'Trùng',
+        };
+    }
+
+    public function getLabel(): string
+    {
+        return $this->label();
+    }
+
+    public function getColor(): string
+    {
+        return match ($this) {
+            self::Matched => 'success',
+            self::Unmatched => 'warning',
+            self::Suggested => 'info',
+            self::Ignored, self::Duplicate => 'gray',
         };
     }
 }

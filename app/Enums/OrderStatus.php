@@ -2,7 +2,10 @@
 
 namespace App\Enums;
 
-enum OrderStatus: string
+use Filament\Support\Contracts\HasColor;
+use Filament\Support\Contracts\HasLabel;
+
+enum OrderStatus: string implements HasColor, HasLabel
 {
     case Pending = 'pending';
     case PartiallyPaid = 'partially_paid';
@@ -20,6 +23,22 @@ enum OrderStatus: string
             self::Overpaid => 'Trả dư',
             self::Expired => 'Hết hạn',
             self::Cancelled => 'Đã hủy',
+        };
+    }
+
+    public function getLabel(): string
+    {
+        return $this->label();
+    }
+
+    /** Màu badge trên dashboard: vàng là việc shop phải xử lý (đòi thêm hoặc trả lại tiền). */
+    public function getColor(): string
+    {
+        return match ($this) {
+            self::Pending => 'info',
+            self::PartiallyPaid, self::Overpaid => 'warning',
+            self::Paid => 'success',
+            self::Expired, self::Cancelled => 'gray',
         };
     }
 

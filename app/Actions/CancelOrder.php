@@ -1,0 +1,52 @@
+<?php
+
+namespace App\Actions;
+
+use App\Enums\OrderStatus;
+use App\Models\AuditLog;
+use App\Models\Order;
+use App\Models\User;
+use DomainException;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Hủy đơn: từ lúc này tiền chuyển vào đơn để "chưa khớp" cho người duyệt xem.
+ * Tiền đã nhận trước đó (đơn trả thiếu) shop tự hoàn cho khách.
+ */
+final class CancelOrder
+{
+    /**
+     * @throws DomainException khi đơn không còn nhận tiền (đã đủ tiền hoặc đã hủy)
+     */
+    public function handle(Order $order, User $by, ?string $ip = null): Order
+    {
+        return DB::transaction(function () use ($order, $by, $ip): Order {
+            // Khóa như RuleMatcher, để khoản tiền đến cùng lúc không cộng vào đơn vừa hủy.
+            $locked = Order::query()
+                ->where('shop_id', $order->shop_id)
+                ->whereKey($order->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! $locked->status->acceptsPayment()) {
+                throw new DomainException("Đơn {$locked->code} đang ở trạng thái \"{$locked->status->label()}\", không hủy được.");
+            }
+
+            $from = $locked->status;
+            $locked->update(['status' => OrderStatus::Cancelled]);
+
+            // shop_id không nằm trong fillable: ghi tường minh, không dựa vào CurrentShop.
+            AuditLog::query()->forceCreate([
+                'shop_id' => $locked->shop_id,
+                'user_id' => $by->getKey(),
+                'action' => 'order.cancelled',
+                'subject_type' => $locked->getMorphClass(),
+                'subject_id' => $locked->getKey(),
+                'meta' => ['from' => $from->value, 'paid_amount' => $locked->paid_amount],
+                'ip' => $ip,
+            ]);
+
+            return $locked;
+        }, 3);
+    }
+}

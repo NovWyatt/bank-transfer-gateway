@@ -1,0 +1,30 @@
+/*
+ * Dashboard Filament: theme tối giản theo minimalist-ui (mục 9a của kế hoạch).
+ * Chỉ ghi đè, không build lại Tailwind, để deploy không cần Node.
+ * Khối đứng yên không có bóng đổ; dropdown và modal là thứ nổi thật nên giữ bóng.
+ */
+
+.fi-section-content-ctn,
+.fi-input-wrp,
+.fi-pagination-items,
+.fi-btn-group,
+.fi-outlined,
+.fi-ta-ctn,
+.fi-wi-stats-overview-stat,
+.fi-fo-builder-item,
+.fi-topbar,
+.fi-simple-main,
+.fi-btn {
+    --tw-shadow: 0 0 #0000;
+}
+
+/* Số tiền, mã đơn, số tài khoản: chữ số đều cột để dễ dò. */
+.fi-ta-text,
+.fi-in-text,
+.fi-wi-stats-overview-stat-value {
+    font-variant-numeric: tabular-nums;
+}
+
+.fi-btn:active {
+    transform: scale(0.98);
+}
