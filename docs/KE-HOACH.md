@@ -861,6 +861,7 @@ Quy tắc:
 - `WEBHOOKS_ALLOW_PRIVATE_TARGETS=true` trong `.env` ở máy lọt sang test. `phpunit.xml` ghim biến này về `false` với `force="true"`.
 - Log của `php artisan serve` ghi "~14 giây" cho request Livewire: đó là thời gian giữ kết nối keep-alive, không phải độ trễ (đo bằng Performance API của trình duyệt: 0,6 đến 1 giây).
 - Secret trong hộp "chỉ hiện một lần" nằm ở state của ô nhập, không phải chữ trong HTML: test đọc đối số của action đang mở thay vì `assertMountedActionModalSee`.
+- **Cột JSON của MySQL tự sắp lại thứ tự khóa** (khóa ngắn trước), MariaDB ở máy thì giữ nguyên. Test so `audit_logs.meta` bằng `toBe` qua ở máy nhưng hỏng trên CI từ commit thành viên `7cd57ea` (lúc đó chưa xem CI). Đổi sang `toEqual`. Cũng vì vậy `webhook_deliveries.payload` và `idempotency_keys.response_body` là cột chữ, không phải JSON: byte đã ký hay đã trả phải giữ nguyên. Từ nay xem CI sau mỗi lần push.
 
 **Đã xong:**
 - Sanctum 4.3 và Scramble 0.13.48. API v1: tạo, xem, liệt kê (cursor), hủy đơn; liệt kê giao dịch. `Idempotency-Key` cho `POST`. Lỗi dạng `{"message", "code"}`. Tài liệu ở `/docs/api`.

@@ -110,7 +110,7 @@ describe('hủy đơn', function (): void {
         expect($log->action)->toBe('order.cancelled')
             ->and($log->user_id)->toBe($this->owner->getKey())
             ->and($log->subject_id)->toBe($order->getKey())
-            ->and($log->meta)->toBe(['from' => 'pending', 'paid_amount' => 0, 'via' => 'dashboard']);
+            ->and($log->meta)->toEqual(['from' => 'pending', 'paid_amount' => 0, 'via' => 'dashboard']);
     });
 
     it('ẩn nút hủy với đơn đã đủ tiền', function (OrderStatus $status): void {

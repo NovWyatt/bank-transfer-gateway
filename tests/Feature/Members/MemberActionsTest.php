@@ -110,7 +110,7 @@ describe('đổi vai trò và xóa', function (): void {
         $log = AuditLog::withoutGlobalScopes()->sole();
         expect($log->action)->toBe('member.role_changed')
             ->and($log->subject_id)->toBe($second->getKey())
-            ->and($log->meta)->toBe(['from' => 'owner', 'to' => 'staff']);
+            ->and($log->meta)->toEqual(['from' => 'owner', 'to' => 'staff']);
     });
 
     it('không xóa owner cuối cùng nhưng xóa được nhân viên', function (): void {
@@ -134,7 +134,7 @@ describe('thu hồi', function (): void {
         (new RevokeInvitation)->handle($invitation, $this->owner);
 
         expect(ShopInvitation::withoutGlobalScopes()->count())->toBe(0)
-            ->and(AuditLog::withoutGlobalScopes()->sole()->meta)->toBe(['email' => 'lan@example.test', 'role' => 'staff']);
+            ->and(AuditLog::withoutGlobalScopes()->sole()->meta)->toEqual(['email' => 'lan@example.test', 'role' => 'staff']);
     });
 
     it('không thu hồi lời mời đã được nhận', function (): void {
