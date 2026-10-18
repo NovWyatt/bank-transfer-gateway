@@ -295,9 +295,10 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
 - Bảng `shop_user` có cột `role` (`owner` hoặc `staff`).
   - Owner quản lý kết nối, webhook, token API và thành viên.
   - Staff xem đơn, tạo đơn, duyệt gợi ý.
-- Mọi model của một shop có global scope theo `shop_id` hiện tại, cộng thêm Policy.
-- Bộ test **cách ly tenant**: user của shop A gọi mọi route của shop B phải nhận 404 hoặc 403.
-- Dashboard dùng **Filament** (có sẵn tenancy qua `->tenant(Shop::class)`). Bản nào chạy với Laravel 13: **[cần kiểm tra]**. Nếu chưa có, dùng Livewire và Blade.
+- Mọi model của một shop có global scope theo `shop_id` hiện tại (`ShopScope`). Trên dashboard, Filament gắn thêm scope tenant của riêng nó, nên có hai lớp lọc độc lập.
+- Trang chỉ dành cho owner (tài khoản ngân hàng, kết nối) chặn bằng `canAccess()` qua `App\Tenancy\ShopAccess`. Policy cho API thêm ở GĐ2.
+- Bộ test **cách ly tenant**: user của shop A gọi mọi route của shop B phải nhận 404 hoặc 403 (`tests/Feature/Dashboard`).
+- Dashboard dùng **Filament 5.10.2 với Livewire 4.4.7**, chạy được trên Laravel 13 (đã dựng và test ngày 18/10/2026). Panel ở `/app/{shop-slug}`, tenancy qua `->tenant(Shop::class, slugAttribute: 'slug')`.
 
 ### 5.9 Thông báo Telegram
 
@@ -431,10 +432,10 @@ thanh, số mẫu, và độ chính xác của từng phiên bản.
 | DB máy local và CI | Larabox chạy **MariaDB 12.2** (không phải MySQL). CI dùng service `mysql:8.4` | Production là MySQL 8.0 của Wasmer. Migration chỉ dùng tính năng có ở cả MariaDB và MySQL |
 | Dashboard | Filament 5 (tenancy) | ✅ Filament 5.10 hỗ trợ `illuminate ^13`, chạy trên Livewire 4 |
 | API | Sanctum, `dedoc/scramble` | ✅ Scramble 0.13.48 hỗ trợ Laravel 13 |
-| QR | `chillerlan/php-qrcode` 6 | Xuất SVG, không cần GD |
+| QR | `chillerlan/php-qrcode` 5 (đang dùng 5.0.5) | Xuất SVG, không cần GD |
 | Gợi ý khớp đơn | PHP thuần (hồi quy logistic tự viết) | Không thư viện, không API ngoài |
 | Test và chất lượng | Pest 4 (ghim `^4.7`), Pint, Larastan 3 (level ≥ 6) | Pest 5 đòi PHP 8.4, còn Wasmer chạy 8.3 |
-| Giao diện | Tailwind (Vite), taste-skill (mục 9a) | Trang công khai nhẹ, không cần JS framework |
+| Giao diện | CSS viết tay, taste-skill (mục 9a) | `/pay` dùng `public/css/pay.css` và `pay.js`, không build. Dashboard giữ theme Filament, ghi đè ở `public/css/panel.css`. Deploy không cần Node |
 | Tunnel test webhook ở máy | `cloudflared`: tunnel có tên `btg-dev` (mục 10a). Quick tunnel làm dự phòng | Đặt portable ở `D:\SETUP\cloudflared`. Quick tunnel: `cloudflared tunnel --url http://localhost:8000` |
 
 Ghi mọi thư viện thêm vào README, mục "Cài đặt".
@@ -788,9 +789,33 @@ Quy tắc:
 
 - Pest 4 có sẵn hàm toàn cục `fixture()` (trả đường dẫn file trong `tests/Fixtures`). Tự khai báo hàm cùng tên làm PHP báo lỗi định nghĩa lại; hàm đọc nội dung đặt tên `fixtureContent()`.
 - Carbon 3 ném `InvalidFormatException` khi `createFromFormat` gặp chuỗi sai dạng, không trả `false` như `DateTime`. `PayloadReader` bắt lỗi này và đổi thành `InvalidPayload`.
+- Seeder mặc định có `WithoutModelEvents`. Trait này tắt event của model, nên `uuid` của kết nối và `shop_id` tự gán đều không chạy. Đã bỏ khỏi `DatabaseSeeder`.
+- Phông đầu tiên taste-skill bốc (Schibsted Grotesk, rồi Bebas Neue) không có subset tiếng Việt. Bốc lại phần chữ, ra Hanken Grotesk (có subset `vietnamese`). Lý do ghi ở `docs/DESIGN.md`.
+- Filament 5 viết hoa từng chữ của nhãn ("Đơn Hàng"). Mỗi resource đặt `$hasTitleCaseModelLabel = false`.
+- Filament tự gắn scope tenant qua quan hệ `shop()` của model, và tìm quan hệ ngược trên `Shop` theo tên model (`providerConnections`). `Shop` đặt tên `connections()`, nên resource kết nối khai `$tenantRelationshipName`.
+- Trang tạo và trang xem của Filament chia sẵn 2 cột. `Section` không đặt `columnSpanFull()` thì chỉ chiếm nửa trang.
+- `scopedUnique()` của Filament là luật dạng closure, nên test không kiểm được tên luật `unique` qua `assertHasFormErrors(['field' => 'unique'])`. Chỉ kiểm có lỗi ở trường đó.
+- Khung dự án không có `filament:upgrade` trong `post-autoload-dump`. Đã thêm. Asset Filament đã publish (`public/css|js|fonts/filament`, khoảng 4,5 MB) vẫn commit, vì chưa chắc bước build trên Wasmer có chạy script của Composer.
+
 **Đã xong:**
 - Lõi thuần (không DB): mã đơn, chuỗi VietQR kèm CRC, chuẩn hóa nội dung và tìm mã đơn (62 test).
 - Bảng dữ liệu lõi, model, enum. Tách dữ liệu theo shop bằng trait `BelongsToShop` và holder `CurrentShop` (scoped: tự xóa sau mỗi request và job). Chưa đặt shop thì không lọc, để đường nhận webhook và lệnh console chạy trên mọi shop.
 - Danh sách 76 ngân hàng ở `database/data/banks.json`. Hành động `CreateOrder`: sinh mã, sinh lại khi trùng (phân biệt với trùng `external_ref` qua tên index), hạn mặc định 30 phút.
 - Adapter SePay (HMAC hoặc API key), Pay2S (Bearer) và Simulator (định dạng SePay, chỉ HMAC), cùng `PayloadReader` đọc trường theo kiểu và đổi giờ Việt Nam sang UTC. Fixture chép nguyên văn từ tài liệu chính thức ở `tests/Fixtures/providers/`.
 - Đường nhận `POST /hooks/{provider}/{uuid}` (không session, giới hạn 120 request/phút mỗi kết nối): xác thực, lưu `inbound_events` với header bí mật đã che, ghi giao dịch chống trùng, bỏ qua tiền ra, đánh dấu trùng chéo nhà cung cấp, khớp đơn bằng quy tắc với đơn đã khóa `lockForUpdate`.
+- Quy tắc trạng thái của đơn (mục 5.4): đơn đã đủ tiền hoặc đã hủy mà nhận thêm tiền thì giao dịch để "chưa khớp". Ân hạn 24 giờ tính theo giờ ngân hàng ghi nhận (`transactedAt`), không theo lúc webhook đến.
+- Lệnh `orders:expire` (lịch mỗi phút) chuyển đơn `pending` quá hạn sang `expired`. Lệnh `pay:simulate {code} {amount?}` gửi webhook giả lập có ký HMAC qua đúng đường nhận thật.
+- Hướng thiết kế chọn bằng taste-skill: `sentence-as-layout`, chi tiết ở `docs/DESIGN.md`. Trang `/pay/{code}`, `/pay/{code}/status` và `/qr/{code}.svg`: không session, không cookie, có CSP. Trang tự đổi khi tiền về (hỏi trạng thái 5 giây một lần). `inspect.mjs` không còn `FAIL` ở cả sáu trạng thái.
+- Dashboard Filament ở `/app/{shop}`:
+  - Đơn hàng: bảng tự làm mới 15 giây, tạo đơn qua action `CreateOrder` dùng chung với API, trang xem có link `/pay` và các giao dịch đã khớp.
+  - Hủy đơn qua action `CancelOrder`: khóa đơn như `RuleMatcher`, ghi `audit_logs`. Chỉ hủy được đơn còn nhận tiền.
+  - Giao dịch: chỉ xem, lọc theo trạng thái, nhà cung cấp, chiều tiền.
+  - Chỉ owner: tài khoản ngân hàng (mã ngân hàng suy từ BIN, mỗi shop một tài khoản mặc định) và kết nối nhà cung cấp (khóa mã hóa, để trống khi sửa thì giữ khóa cũ, có URL webhook để chép).
+  - Widget: đã nhận hôm nay theo múi giờ shop, đơn đang chờ, giao dịch chưa khớp.
+  - Giờ hiển thị theo múi giờ của shop. Thông báo kiểm tra dữ liệu tiếng Việt ở `lang/vi/validation.php`.
+- Đã thử ở máy (18/10/2026): đăng nhập dashboard, tạo đơn 275.000đ, `pay:simulate` cho đơn sang "Đã thanh toán", giao dịch hiện ở cả trang đơn lẫn danh sách giao dịch. 206 test xanh.
+
+**Còn lại của GĐ1:**
+- Tunnel `btg-dev`: Wyatt chạy `cloudflared tunnel login` trên tài khoản rirtar.lofi (mục 10a, mục 13). Sau đó thử "Gửi thử" của SePay và sandbox Pay2S đi qua tunnel.
+- Quét mã VietQR bằng ít nhất hai app ngân hàng (mục 5.7).
+- Màn hình mời và quản lý thành viên (owner thêm staff). Hiện chỉ thêm được qua seeder hoặc tinker.
