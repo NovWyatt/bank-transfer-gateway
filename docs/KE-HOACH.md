@@ -155,7 +155,7 @@ Khách chuyển khoản ─► Tài khoản ngân hàng của shop
 
 **Nguyên tắc:**
 - Bước 1–6 chạy **ngay trong request**: chỉ là vài câu SQL, không gọi ra ngoài. Không dùng `afterResponse()`: spike cho thấy trên Wasmer nó giữ request lại (mục 10).
-- Phần gọi ra ngoài (webhook, Telegram) đi qua **hàng đợi**.
+- Phần gọi ra ngoài (webhook, Telegram) ghi vào **hàng chờ trong DB** (outbox) cùng transaction, rồi nhịp mỗi phút gửi đi (mục 5.5).
 - Nhờ vậy, việc "đơn chuyển sang đã thanh toán" không phụ thuộc vào worker hàng đợi, vốn là điểm yếu trên Wasmer.
 
 ### 5.2 Lớp adapter
@@ -241,29 +241,45 @@ Ví dụ payload:
 }
 ```
 
+`data.order` và `data.transaction` dùng đúng resource của API v1, nên cùng trường với `GET /api/v1/orders/{code}`.
+
+**Sự kiện:** `order.paid`, `order.partially_paid`, `order.overpaid`, `order.expired`, `order.cancelled`, `transaction.unmatched`, và `webhook.ping` (chỉ khi gửi thử, không đăng ký được).
+
+**Hàng chờ gửi (outbox), đã làm ở GĐ2:**
+- Bản ghi `webhook_deliveries` tạo **trong cùng DB transaction** với việc đổi trạng thái đơn (`RecordTransaction`, `CancelOrder`, `ExpireOrders`). Rollback hay deadlock chạy lại thì bản ghi của lượt hỏng cũng mất.
+- Một sự kiện có một `event_id` và một payload chung cho mọi endpoint. Payload mã hóa JSON một lần, chữ ký tính trên đúng các byte đã lưu.
+- Không dùng hàng đợi của Laravel: mỗi phút `Schedule::call(DeliverDueWebhooks::class)` nhận các bản ghi đến hạn bằng `SELECT … FOR UPDATE SKIP LOCKED`, dời `next_attempt_at` thêm 120 giây để giữ chỗ, rồi gửi lần lượt. Mỗi nhịp chỉ bắt đầu lần gửi mới trong 8 giây, cộng timeout 10 giây là dưới 20 giây. Bản ghi chưa kịp gửi được trả lại cho nhịp sau.
+
 **Chữ ký**, theo kiểu Stripe:
-- Header `X-Gateway-Signature: t={unix},v1={hex(hmac_sha256(secret, "{t}.{raw_body}"))}`.
-- Thêm header `X-Gateway-Event-Id` để phía shop chống xử lý trùng.
+- Header `X-Gateway-Signature: t={unix},v1={hex(hmac_sha256(secret, "{t}.{raw_body}"))}`. `t` lấy ở từng lần gửi. Khóa HMAC là nguyên chuỗi secret `whsec_…`.
+- Thêm header `X-Gateway-Event-Id` để phía shop chống xử lý trùng, và `X-Gateway-Event-Type`.
 
 **Retry:**
-- Gửi lại sau 1 phút, 5 phút, 15 phút, 1 giờ, 3 giờ, 6 giờ, 12 giờ: tổng 7 lần trong khoảng 22 giờ.
-- Lần gửi thành công là khi nhận 2xx trong vòng 10 giây.
-- Sau 7 lần thì trạng thái là `dead`.
-- Endpoint thất bại liên tiếp quá ngưỡng thì tự tắt và báo Telegram cho chủ shop.
+- Lần đầu gửi ở nhịp kế tiếp (chậm nhất 1 phút). Hỏng thì gửi lại sau 1 phút, 5 phút, 15 phút, 1 giờ, 3 giờ, 6 giờ, 12 giờ: 8 lần trong khoảng 22 giờ, rồi trạng thái là `failed`.
+- Lần gửi thành công là khi nhận 2xx trong vòng 10 giây (kết nối tối đa 5 giây). **3xx tính là hỏng: không đi theo chuyển hướng.**
+- Endpoint tự tắt khi hỏng liên tiếp **từ 20 lần và kéo dài từ 24 giờ**: một đợt sập ngắn không làm tắt. Bản ghi đến hạn của endpoint đã tắt chuyển `skipped`. Báo Telegram khi tự tắt: GĐ3.
+- Gửi tay ("Gửi lại", "Gửi thử", API `/test`) không tính vào lịch gửi lại. Gửi tay thành công thì bản ghi thành `succeeded`.
 
-**Nhật ký** từng lần gửi lưu mã HTTP, 2 KB đầu của body phản hồi và thời gian. Có nút **Gửi lại**, và lệnh `POST /api/v1/webhook-endpoints/{id}/test`.
+**Nhật ký** từng lần gửi (`webhook_attempts`) lưu mã HTTP, 2 KB đầu của body phản hồi (cắt đúng ranh giới UTF-8), lỗi và thời gian. Có nút **Gửi lại**, và lệnh `POST /api/v1/webhook-endpoints/{id}/test`. Bản ghi đã xong giữ 30 ngày.
 
 **Chặn SSRF:**
-- URL đích phải là `https`.
-- Phân giải DNS rồi chặn IP nội bộ, loopback, link-local và metadata (`169.254.169.254`).
-- Kiểm tra lại cả khi bị chuyển hướng.
+- URL đích phải là `https`, không có tài khoản trong URL, chỉ ký tự ASCII in được, không có `\`.
+- Phân giải DNS **ở mỗi lần gửi**, chặn nếu bất kỳ địa chỉ nào không công khai: `FILTER_FLAG_GLOBAL_RANGE` cộng thêm multicast và NAT64 `64:ff9b::/96` (PHP để lọt hai loại này).
+- Ghim IP đã kiểm bằng `CURLOPT_RESOLVE` và gửi tới URL dựng lại từ các phần đã parse: curl không tự phân giải lại, cũng không hiểu host khác `parse_url`.
+- Không theo chuyển hướng nên không cần kiểm lại sau chuyển hướng. Phản hồi quá 1 MB thì ngắt.
+- Máy dev có `WEBHOOKS_ALLOW_PRIVATE_TARGETS=true` để thử với script mẫu ở localhost; production luôn chặn.
 
-Kèm một **script mẫu** (PHP và Node) để phía shop kiểm tra chữ ký. Đưa script này vào README.
+**Script mẫu** (PHP và Node) để phía shop kiểm tra chữ ký ở `examples/webhooks/`, có README riêng.
 
 ### 5.6 API cho lập trình viên (v1)
 
-- Token Sanctum gắn với **Shop**: dùng `HasApiTokens` trên model `Shop`, không gắn với User. Quyền theo token: `orders:read`, `orders:write`, `transactions:read`.
-- Hỗ trợ header `Idempotency-Key` cho `POST`: cùng khóa và cùng body thì trả lại kết quả cũ.
+- Token Sanctum gắn với **Shop**: dùng `HasApiTokens` trên model `Shop`, không gắn với User. Quyền theo token: `orders:read`, `orders:write`, `transactions:read`, `webhooks:write`. Token có tiền tố `btg_` để công cụ quét bí mật nhận ra. Guard `sanctum` dùng provider `shops`.
+- Hỗ trợ header `Idempotency-Key` cho `POST`: cùng khóa và cùng body thì trả lại kết quả cũ, kèm header `Idempotent-Replayed: true`.
+  - Ghi khóa **trước** khi chạy, `UNIQUE(shop_id, key)`: request thứ hai đến khi request đầu chưa xong thì nhận 409.
+  - Chỉ lưu phản hồi 2xx. Lỗi thì xóa khóa, để sửa body rồi gửi lại cùng khóa được.
+  - Cùng khóa mà khác body thì 422 `idempotency_key_reused`. Giữ 24 giờ.
+- Lỗi luôn có dạng `{"message", "code"}`; lỗi kiểm tra dữ liệu (422) giữ dạng mặc định của Laravel, có thêm `errors`.
+- Giới hạn 120 request/phút mỗi shop; gửi thử webhook 10 lần/phút.
 
 | Method | Đường dẫn | Ghi chú |
 |---|---|---|
@@ -274,7 +290,7 @@ Kèm một **script mẫu** (PHP và Node) để phía shop kiểm tra chữ ký
 | GET | `/api/v1/transactions` | |
 | POST | `/api/v1/webhook-endpoints/{id}/test` | |
 
-Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ Laravel 13 không: **[cần kiểm tra]**.
+Tài liệu API sinh tự động bằng `dedoc/scramble` 0.13.48, chạy được với Laravel 13 (đã kiểm 18/10/2026). Xem ở `/docs/api`, công khai vì chỉ mô tả cấu trúc.
 
 ### 5.7 Trang công khai và VietQR
 
@@ -338,9 +354,10 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
 | `match_suggestions` | `transaction_id`, `order_id`, `model_version`, `score`, `features` (json), `reason`, `status`, `decided_by`, `decided_at` |
 | `match_feedback` | `shop_id`, `transaction_id`, `order_id`, `features` (json), `label` (0 hoặc 1), `source` (approved, rejected, manual), `is_demo` |
 | `match_models` | `version`, `weights` (json), `bias`, `samples`, `precision`, `coverage`, `trained_at`, `is_active`, `scope` (global hoặc demo) |
-| `webhook_endpoints` | `shop_id`, `url`, `secret` (encrypted), `events` (json), `active`, `consecutive_failures`, `disabled_at` |
-| `webhook_deliveries` | `webhook_endpoint_id`, `event_id`, `event_type`, `payload`, `attempt`, `status`, `next_attempt_at`, `response_code`, `response_body` (2 KB), `duration_ms` |
-| `idempotency_keys` | `shop_id`, `key`, `request_hash`, `response` (json), `expires_at` |
+| `webhook_endpoints` | `shop_id`, `url`, `description`, `secret` (encrypted, `whsec_…`), `events` (json), `active`, `consecutive_failures`, `failing_since`, `disabled_at`, `disabled_reason`, `last_success_at` |
+| `webhook_deliveries` | `shop_id`, `webhook_endpoint_id`, `event_id` (`evt_` + ULID), **UNIQUE(webhook_endpoint_id, event_id)**, `event_type`, `payload` (chuỗi JSON nguyên văn), `status` (pending, succeeded, failed, skipped), `attempt_count`, `next_attempt_at`, `last_attempt_at`, `last_response_code`, `delivered_at`. Index `(status, next_attempt_at)` |
+| `webhook_attempts` | `webhook_delivery_id`, `trigger` (auto, manual), `response_code`, `response_body` (2 KB đầu), `error`, `duration_ms`, `created_at` |
+| `idempotency_keys` | `shop_id`, `key`, **UNIQUE(shop_id, key)**, `request_hash` (sha256 của method, đường dẫn và body), `response_status` (null: request đầu đang chạy), `response_body`, `expires_at` |
 | `audit_logs` | `shop_id`, `user_id`, `action`, `subject_type`, `subject_id`, `meta`, `ip` |
 | `personal_access_tokens` | Của Sanctum, `tokenable` là Shop |
 
@@ -355,7 +372,7 @@ Hàng đợi, cache và session đều dùng driver `database`, vì Wasmer khôn
 - [ ] Bí mật của nhà cung cấp và webhook được mã hóa khi lưu (`encrypted` cast), và chỉ hiện một lần.
 - [ ] Giới hạn tần suất cho từng kết nối, giới hạn kích thước body (ví dụ 64 KB), loại các route `/hooks/*` khỏi CSRF.
 - [ ] Số tiền luôn là số nguyên VND. Khớp đơn dùng `lockForUpdate`.
-- [ ] Chặn SSRF cho webhook gửi đi (mục 5.5).
+- [x] Chặn SSRF cho webhook gửi đi (mục 5.5). Xong ở GĐ2, có test cho từng loại địa chỉ.
 - [ ] Log và `inbound_events` phải che token và header `Authorization`.
 - [ ] Test cách ly tenant cho mọi route.
 - [ ] Nội dung chuyển khoản do khách gõ nên **không đáng tin**. Chỉ dùng nó để tính đặc trưng, và luôn escape khi hiển thị. Gợi ý chỉ được chọn trong danh sách ứng viên của đúng shop (mục 8).
@@ -830,3 +847,32 @@ Quy tắc:
 - Tunnel `btg-dev`: Wyatt chạy `cloudflared tunnel login` trên tài khoản rirtar.lofi (mục 10a, mục 13). Sau đó thử "Gửi thử" của SePay và sandbox Pay2S đi qua tunnel.
 - Quét mã VietQR bằng ít nhất hai app ngân hàng (mục 5.7).
 - ~~Màn hình mời và quản lý thành viên~~: xong ngày 18/10/2026.
+
+### GĐ2: API và webhook gửi đi (bắt đầu 18/10/2026)
+
+**Bẫy gặp phải:**
+- Handler của Laravel đổi `AuthorizationException` (cha của `MissingAbilityException` của Sanctum) thành `AccessDeniedHttpException` **trước** khi gọi render callback. Callback theo kiểu gốc không bao giờ chạy: bắt `AccessDeniedHttpException` rồi xem `getPrevious()`.
+- `Shop` không phải `Authenticatable`, nên test không dùng được `Sanctum::actingAs`. Hàm `apiAs()` trong `tests/Pest.php` tạo token thật và gọi `forgetGuards()`, vì guard nhớ shop của request trước trong cùng test.
+- `plainTextToken` của Sanctum có dạng `{id}|btg_…`: tiền tố nằm sau dấu `|`.
+- PHPStan 2.3 suy sai `filter_var(..., FILTER_FLAG_GLOBAL_RANGE)` không bao giờ trả `false`. Viết `filter_var(...) !== $ip` (đúng nghĩa, không phải tắt cảnh báo).
+- `FILTER_FLAG_GLOBAL_RANGE` vẫn cho qua multicast (`224.0.0.0/4`, `ff00::/8`) và NAT64 `64:ff9b::7f00:1` (thực chất là `127.0.0.1`). `UrlGuard` tự chặn thêm.
+- **Guzzle 8.2 có danh sách cho phép tùy chọn curl**: `CURLOPT_MAXFILESIZE` bị từ chối, `CURLOPT_RESOLVE` được phép. Giới hạn cỡ phản hồi bằng tùy chọn `progress` (trả `true` thì curl ngừng). Lỗi này chỉ lộ khi gửi thật: `Http::fake` không chạy qua curl, nên có test chạy hai script mẫu như máy chủ HTTP ở localhost.
+- Cắt 2 KB đầu của phản hồi bằng `substr` có thể cắt giữa ký tự UTF-8, cột `utf8mb4` ở chế độ strict sẽ từ chối. Dùng `mb_strcut` rồi `mb_scrub`.
+- `WEBHOOKS_ALLOW_PRIVATE_TARGETS=true` trong `.env` ở máy lọt sang test. `phpunit.xml` ghim biến này về `false` với `force="true"`.
+- Log của `php artisan serve` ghi "~14 giây" cho request Livewire: đó là thời gian giữ kết nối keep-alive, không phải độ trễ (đo bằng Performance API của trình duyệt: 0,6 đến 1 giây).
+- Secret trong hộp "chỉ hiện một lần" nằm ở state của ô nhập, không phải chữ trong HTML: test đọc đối số của action đang mở thay vì `assertMountedActionModalSee`.
+
+**Đã xong:**
+- Sanctum 4.3 và Scramble 0.13.48. API v1: tạo, xem, liệt kê (cursor), hủy đơn; liệt kê giao dịch. `Idempotency-Key` cho `POST`. Lỗi dạng `{"message", "code"}`. Tài liệu ở `/docs/api`.
+- Webhook gửi đi theo mục 5.5: outbox, chữ ký, lịch gửi lại, nhật ký từng lần gửi, tự tắt endpoint, chặn SSRF có ghim IP, `POST /api/v1/webhook-endpoints/{id}/test`, lệnh `webhooks:deliver` để gửi ngay ở máy.
+- Dọn khóa idempotency hết hạn và bản ghi gửi quá 30 ngày mỗi giờ (`Schedule::call`, không dùng `model:prune` vì nó là lệnh Artisan).
+- Dashboard, chỉ owner: trang **Token API** (tạo với quyền và hạn tùy chọn, hiện một lần, thu hồi) và **Webhook gửi đi** (thêm endpoint và hiện secret một lần, gửi thử, đổi secret, tạm tắt, bật lại, nhật ký gửi kèm chi tiết từng lần gửi, payload và nút gửi lại). Mọi thao tác ghi `audit_logs`.
+- Script mẫu kiểm chữ ký PHP và Node ở `examples/webhooks/`, có README. Test chạy thật hai script như máy chủ HTTP và gửi webhook thật tới: kiểm đúng chữ ký, bỏ trùng theo event id, từ chối secret sai. Hàm PHP và Node cho cùng kết quả trên cùng bộ ca.
+- Đã thử ở máy (18/10/2026): thêm endpoint `http://localhost:9000/webhooks` trỏ về script mẫu PHP, gửi thử, tạo đơn 320.000đ, `pay:simulate`, `webhooks:deliver`: script mẫu nhận `order.paid` đúng chữ ký. Tạo và thu hồi token trên dashboard. 326 test xanh.
+
+**Còn lại:**
+- Thử `CURLOPT_RESOLVE` và hàm `progress` trên Wasmer (curl bản WebAssembly): GĐ3, khi deploy. **[cần kiểm tra]**
+- Báo Telegram khi endpoint tự tắt: GĐ3, cùng lúc làm Telegram.
+- Nhịp mỗi phút trên Wasmer (`/internal/tick` gọi các `Schedule::call`): GĐ3.
+
+**GĐ2 xong ngày 18/10/2026.**
