@@ -545,9 +545,9 @@ App thử `btg-spike` (vùng `us-losa1`), mã ở nhánh `spike/wasmer`.
 - **Không dùng `afterResponse`, `Schedule::command`, `schedule:run`, `Process` hay bất kỳ thứ gì fork tiến trình.** Mọi việc chạy trong tiến trình hiện tại.
 - **Nhịp mỗi phút đến từ bên ngoài:** một cron gọi `POST /internal/tick`, ký HMAC trong header. Route này làm hai việc:
   1. Chạy các việc đến hạn của `Schedule` bằng `dueEvents()`, chỉ dùng `Schedule::call` hoặc `Schedule::job`.
-  2. Xử lý hàng đợi bằng `queue:work --stop-when-empty --max-time=20`, gọi trong tiến trình.
+  2. Xử lý hàng đợi bằng `queue:work --stop-when-empty`, gọi trong tiến trình. GĐ3 đặt `--max-time=4` (`config/internal.php`) để cả nhịp ngắn.
 - **Đề xuất nguồn cron:** Cloudflare Worker cron trên tài khoản rirtar.lofi (mục 10a, phần 4). Mã để trong `edge/` của repo. Dự phòng: cron-job.org.
-- **Migration khi deploy:** job `post-deployment` có chạy, nhưng không thấy secret `DB_*` của app nên migrate vào một database khác. Thay bằng bước CI gọi `POST /internal/migrate` có ký HMAC, ngay sau khi deploy.
+- **Migration khi deploy:** job `post-deployment` có chạy, nhưng không thấy secret `DB_*` của app nên migrate vào một database khác. Thay bằng bước CI gọi `POST /internal/migrate` có ký HMAC, ngay sau khi deploy (GĐ3 đặt tên là `/internal/deploy`: migrate rồi đăng ký webhook Telegram).
 - **Bí mật không bao giờ nằm trong URL:** log truy cập của Wasmer ghi nguyên URL, kể cả query string.
 - `scaling.mode: single_concurrency`: mỗi instance xử lý một request một lúc, nên `/internal/tick` phải ngắn (dưới 20 giây).
 
@@ -561,7 +561,7 @@ Các phương án đã cân nhắc:
 | TiDB Starter ở Oregon, ghim app ở `us-hillsboro` | 5 GiB, TLS chuẩn | Thêm tài khoản; không có `SKIP LOCKED` (đặt `DB_SERVER_VERSION=5.7.25`); chưa thử |
 | TiDB Starter ở Singapore (kế hoạch cũ) | Gần khách Việt Nam | App ở Mỹ nên mỗi câu SQL đi xuyên Thái Bình Dương |
 
-**Hàng đợi khi không có worker chạy liên tục:** `QUEUE_CONNECTION=database`. Mỗi phút, `/internal/tick` chạy `queue:work --stop-when-empty --max-time=20` trong tiến trình (xem "Kết quả spike").
+**Hàng đợi khi không có worker chạy liên tục:** `QUEUE_CONNECTION=database`. Mỗi phút, `/internal/tick` chạy `queue:work --stop-when-empty --max-time=4` trong tiến trình (xem "Kết quả spike"). Việc theo lịch chạy trước, rồi tới hàng đợi thêm tối đa 4 giây.
 
 **CI và triển khai:** GitHub Actions gồm hai job.
 - `tests`: Pint `--test`, Larastan, Pest với service MySQL.
@@ -576,7 +576,7 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 
 **Kiểm tra tài khoản trước mỗi lần làm:**
 - Cài `wrangler` làm dev dependency của dự án (`npm i -D wrangler`), không cài toàn cục.
-- Chạy `npx wrangler whoami`, phải thấy rirtar.lofi@gmail.com. Máy đã có một phiên đăng nhập wrangler cũ, chưa biết của tài khoản nào: **[cần kiểm tra]**.
+- Chạy `npx wrangler whoami`, phải thấy rirtar.lofi@gmail.com. Phiên wrangler trên máy là rirtar.lofi@gmail.com (kiểm ngày 18/10/2026, wrangler 4.151.1 trong `edge/`).
 - Sai tài khoản thì dừng lại. Wyatt tự chạy `npx wrangler logout`, rồi `npx wrangler login` bằng rirtar.lofi.
 - Không dùng connector Cloudflare của claude.ai cho dự án này, trừ khi Wyatt xác nhận connector đó là tài khoản rirtar.lofi.
 - Không đọc các file chứa token: `%APPDATA%\xdg.config\.wrangler\config\default.toml`, `cert.pem` và các file `*.json` của cloudflared.
@@ -663,7 +663,7 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 | **0. Chuẩn bị** | Tạo Laravel ngay tại `C:\Users\Wyatt\Larabox\www\bank-transfer-gateway`, git (`NovWyatt <rirtar.lofi@gmail.com>`), CI (Pint, Larastan, Pest). Tạo repo public `NovWyatt/bank-transfer-gateway` và push (đã được phép, mục 0). **Spike Wasmer** (mục 10) | CI xanh. Spike trả lời đủ 4 câu hỏi và ghi kết quả vào `docs/KE-HOACH.md` |
 | **1. Lõi** | Shop, phân quyền, tài khoản ngân hàng, đơn và mã đơn, VietQR, đường nhận (SePay, Pay2S, Simulator), khớp bằng quy tắc, dashboard cơ bản. Chọn hướng thiết kế bằng taste-skill rồi dựng trang `/pay` theo hướng đó (mục 9a). Tunnel `btg-dev` (mục 10a) | Ở máy: giả lập cho đơn sang `paid`. "Gửi thử" của SePay và sandbox Pay2S đi qua được cloudflared tunnel. `/pay` qua được `inspect.mjs` |
 | **2. API và webhook gửi đi** | Sanctum, Scramble, `Idempotency-Key`, endpoint webhook, ký, retry, nhật ký, gửi lại, chặn SSRF, script kiểm chữ ký mẫu | Script mẫu kiểm chữ ký thành công. Test retry xanh |
-| **3. Chạy thật** | Deploy Wasmer với MySQL của Wasmer, Worker cron gọi `/internal/tick`, migrate qua `/internal/migrate` từ CI, Telegram, tên miền và các quy tắc Cloudflare (mục 10a). Chuyển thật 2.000đ | Có GIF luồng thật từ chuyển khoản đến Telegram |
+| **3. Chạy thật** | Deploy Wasmer với MySQL của Wasmer, Worker cron gọi `/internal/tick`, migrate qua `/internal/deploy` từ CI, Telegram, tên miền và các quy tắc Cloudflare (mục 10a). Chuyển thật 2.000đ | Có GIF luồng thật từ chuyển khoản đến Telegram |
 | **4. Gợi ý tự học và hộp chưa khớp** | Hộp giao dịch chưa khớp, đặc trưng, chấm điểm bằng trọng số đặt tay, duyệt, nhật ký kiểm toán, `match_feedback`, `match:train`, `match:eval`, trang mô hình | `match:eval` đạt ngưỡng ghi trong README. Mô hình đã học tốt hơn trọng số đặt tay trên bộ fixture |
 | **5. Hoàn thiện cho profile** | Trang giới thiệu và demo công khai, làm theo đủ quy trình taste-skill (mục 9a). README dạng case study (vấn đề, kiến trúc, quyết định, số liệu), sơ đồ, ảnh chụp ngang khoảng 1,6:1. Không bắt buộc: adapter payOS, Worker đứng trước, Turnstile | Nhà tuyển dụng mở link demo và bấm thử được trong 1 phút. Trang giới thiệu không còn `FAIL` nào khi chạy `inspect.mjs` |
 
@@ -683,19 +683,20 @@ Mỗi giai đoạn: commit nhỏ, viết tiếng Việt. Cuối giai đoạn c�
    1. Đăng ký gói Free.
    2. Xem gói này có tạo được Hook không, rồi báo lại. Nếu không được thì chỉ dùng sandbox.
    3. Token Hook chỉ hiện một lần, nên lưu ngay.
-5. **Bot Telegram:** tạo qua @BotFather và dán token vào `.env`.
+5. **Bot Telegram:** tạo qua @BotFather (lệnh `/newbot`), rồi chạy `bash scripts/setup-production.sh telegram` để dán token (không hiện chữ). Ở máy dev thì dán vào `.env`.
 6. ~~Khóa API AI~~: không cần. Gợi ý khớp đơn chạy ngay trong app (mục 8).
 7. ~~TiDB Cloud Starter~~: không cần nữa, dùng MySQL của Wasmer (quyết định 18/10/2026).
 8. **Wasmer:**
    1. Đăng ký.
    2. Chạy `D:\SETUP\wasmer\bin\wasmer.exe login`.
-   3. Tạo token cho CI và thêm vào bí mật `WASMER_TOKEN` của repo.
+   3. Tạo token cho CI ở wasmer.io/settings/access-tokens, rồi chạy `bash scripts/setup-production.sh ci` (đặt `WASMER_TOKEN` và biến `WASMER_OWNER` của repo).
+   4. Chạy `bash scripts/setup-production.sh core` một lần: sinh `APP_KEY` và secret của tick, deploy, đặt vào Wasmer, Worker và GitHub mà không in ra. Sau đó `apply` (redeploy, migrate) và `bootstrap` (tạo shop đầu tiên, in link mời owner).
 9. **Cloudflare** (tài khoản rirtar.lofi@gmail.com, mục 10a):
    1. Chạy `cloudflared tunnel login` một lần, ở GĐ1.
    2. Chạy `npx wrangler login` nếu `whoami` không ra rirtar.lofi.
    3. Thêm bản ghi DNS cho `pay.wyattos.cyou`, hoặc cho phép Claude thêm qua Brave (Claude hỏi lại lúc làm).
    4. Tắt Bot Fight Mode nếu đang bật.
-   5. Tự đặt các secret của Worker, nếu phải dùng Worker.
+   5. Secret `TICK_SECRET` của Worker: bước `core` của `scripts/setup-production.sh` tự đặt sau khi hỏi xác nhận tài khoản.
 10. **Chuyển khoản thử 2.000đ** từ một tài khoản khác (ngân hàng thứ hai hoặc người nhà) vào tài khoản đã nối.
 
 ---
@@ -748,7 +749,7 @@ Push `profile.yml` và `media/` lên thì GitHub Actions tự vẽ lại profile
 - ~~Filament và Scramble có tương thích Laravel 13 không~~: có, tra trên Packagist ngày 18/10/2026 (mục 9).
 - Chuỗi VietQR quét đúng trên ít nhất hai app ngân hàng.
 - Cloudflare (mục 10a):
-  - Phiên đăng nhập wrangler cũ trên máy là tài khoản nào.
+  - ~~Phiên đăng nhập wrangler cũ trên máy là tài khoản nào~~: rirtar.lofi@gmail.com (18/10/2026).
   - Zone `wyattos.cyou` có ở tài khoản rirtar.lofi không.
   - Bot Fight Mode đang bật hay tắt.
   - Cách trỏ tên miền riêng về Wasmer.
@@ -877,3 +878,29 @@ Quy tắc:
 - Nhịp mỗi phút trên Wasmer (`/internal/tick` gọi các `Schedule::call`): GĐ3.
 
 **GĐ2 xong ngày 18/10/2026.**
+
+### GĐ3: Chạy thật (bắt đầu 18/10/2026)
+
+**Bẫy gặp phải:**
+- `schedule:run` không chạy được trên Wasmer, nên `/internal/tick` tự lặp qua `Schedule::dueEvents()`. Request HTTP không nạp `routes/console.php`: phải gọi `bootstrap()` của kernel console trước. `CallbackEvent::run()` ném lại lỗi của callback: bọc từng việc trong `try` để một việc hỏng không chặn các việc khác (giống `schedule:run`).
+- **PHP built-in server trả HTTP 200 cho lỗi fatal đã in ra trước header** (gặp khi chạy `php -S` sai thư mục). Worker không tin mã 200 suông: chỉ coi là thành công khi phản hồi là JSON có `ran`.
+- Bản npm mới chặn script cài của gói cho tới khi duyệt: `npm install-scripts approve esbuild workerd`, ghi vào `allowScripts` của `edge/package.json`.
+- `node --test <thư mục>` coi thư mục là một file. Dùng glob `"edge/test/*.test.mjs"` (Node 21 trở lên; runner Ubuntu mặc định Node 20 nên CI cài Node 24).
+- Token bot nằm trong đường dẫn URL của Bot API: lỗi kết nối của Guzzle in nguyên URL. `TelegramClient` xóa token khỏi mọi thông điệp lỗi trước khi ném ra.
+- Wasmer CLI có `wasmer app secrets reveal`: Claude không dùng lệnh này. Secret do `scripts/setup-production.sh` sinh và đặt, Claude không thấy giá trị.
+- Wasmer chuyển request vào app bằng http: phải `URL::forceScheme('https')` ở production, nếu không link mời và URL webhook Telegram ra `http://`.
+
+**Đã xong:**
+- `/internal/tick`, `/internal/deploy`, `/internal/bootstrap`, ký `X-Internal-Signature` trên cả method, đường dẫn và body. Mỗi đường một secret, secret trống thì trả 404. Thử thật ở máy: script bash ký bằng openssl và hàm của Worker ký bằng Web Crypto đều gọi tick thành công, sai secret thì 401.
+- Telegram theo mục 5.9: nối bằng link `t.me/<bot>?start=<mã một lần, 15 phút>` (nối được cả vào nhóm), `/stop` và chặn bot thì ngắt, tin tiền về `+150.000đ · DH7K3QXM · đã thanh toán` xếp hàng trong cùng DB transaction với giao dịch, báo khi webhook tự tắt. Bot trả lời ngay trong phản hồi webhook, không gọi Bot API. Trang dashboard **Thông báo Telegram** cho owner: nối, gửi thử, ngắt.
+- Worker `btg-edge` (thư mục `edge/`) đã deploy lên tài khoản rirtar.lofi, cron `* * * * *`. Chưa có `TICK_SECRET` nên mỗi lần chạy dừng ngay, chưa gọi app.
+- App `bank-transfer-gateway` đã deploy lần đầu lên Wasmer (`https://bank-transfer-gateway.wasmer.app`, vùng us-losa1, MySQL của Wasmer). Đang trả 500 vì chưa có `APP_KEY` (đã xem log), `/up` trả 200.
+- CI có job deploy: chạy trên `main` sau khi test xanh, chỉ khi đã có biến `WASMER_OWNER`; đóng gói, `wasmer deploy`, rồi gọi `/internal/deploy`.
+- `scripts/setup-production.sh` cho Wyatt tự chạy (mục 13). 376 test PHP (1 test đang bỏ qua, xem "Còn lại") và 5 test Worker xanh trên CI.
+
+**Còn lại:**
+- Wyatt chạy `scripts/setup-production.sh` (core, ci, telegram, apply, bootstrap). Sau đó Claude kiểm tick trên production qua log của Worker và app.
+- Phân loại lỗi "chat không còn nhận tin" (`TelegramError::chatUnreachable`), test tương ứng đang bỏ qua.
+- Thử `CURLOPT_RESOLVE` và hàm `progress` trên Wasmer bằng một endpoint webhook thật. **[cần kiểm tra]**
+- Tên miền `pay.wyattos.cyou`, SSL Full (strict), các quy tắc cache và bảo vệ (mục 10a). Claude soạn bản ghi DNS, hỏi lại Wyatt lúc làm.
+- Nối SePay thật, chuyển thật 2.000đ, ghi GIF luồng từ chuyển khoản tới Telegram.
