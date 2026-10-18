@@ -1,0 +1,58 @@
+# Cấu hình app trên Wasmer Edge cho spike giai đoạn 0 (docs/KE-HOACH.md, mục 10).
+# __SPIKE_TOKEN__ được script build thay bằng giá trị thật; bản có token chỉ nằm trong build/ (gitignore).
+kind: wasmer.io/App.v0
+name: btg-spike
+owner: novwyatt
+package: .
+
+# MySQL của Wasmer chỉ có ở us-losa1, fr-roub1, ca-beau1, và app có DB chỉ được chọn một vùng.
+locality:
+  regions:
+    - us-losa1
+
+# PHP built-in server xử lý từng request một.
+scaling:
+  mode: single_concurrency
+
+capabilities:
+  database:
+    engine: mysql
+
+env:
+  APP_NAME: "Bank Transfer Gateway"
+  APP_ENV: production
+  APP_DEBUG: "false"
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: info
+  VIEW_COMPILED_PATH: /tmp/views
+  SESSION_DRIVER: database
+  CACHE_STORE: database
+  QUEUE_CONNECTION: database
+  DB_CONNECTION: mysql
+  DB_SSL_VERIFY: "false"
+  MYSQL_ATTR_SSL_CA: /etc/ssl/cacert.pem
+  SPIKE_ENABLED: "true"
+
+jobs:
+  - name: migrate
+    trigger: post-deployment
+    action:
+      execute:
+        command: artisan
+        cli_args: ["migrate", "--force"]
+
+  # Câu 3, cách A: chạy thẳng lệnh artisan.
+  - name: schedule-execute
+    trigger: '* * * * *'
+    action:
+      execute:
+        command: artisan
+        cli_args: ["schedule:run"]
+
+  # Câu 3, cách B: gọi một URL; app tự chạy việc đến hạn.
+  - name: schedule-fetch
+    trigger: '* * * * *'
+    action:
+      fetch:
+        path: /spike/tick?token=__SPIKE_TOKEN__
+        timeout: 30s

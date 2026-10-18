@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Route;
 
 // Không nằm trong nhóm "web": không session, không cookie, không CSRF.
 Route::prefix('spike')->middleware(RequireSpikeToken::class)->group(function () {
+    Route::get('info', [SpikeController::class, 'info']);
+    Route::get('migrate', [SpikeController::class, 'migrate']);
     Route::get('db', [SpikeController::class, 'db']);
     Route::get('http', [SpikeController::class, 'http']);
     Route::get('after-response', [SpikeController::class, 'afterResponse']);

@@ -1,0 +1,25 @@
+# Gói Wasmer cho app Laravel. Script scripts/build-wasmer.sh chép file này vào build/wasmer.
+[package]
+entrypoint = "run"
+
+[dependencies]
+"php/php-eh" = "=8.3.404-beta.4"
+
+[fs]
+"/app" = "."
+
+# Máy chủ web: PHP built-in server, document root là public/.
+[[command]]
+name = "run"
+module = "php/php-eh:php"
+runner = "wasi"
+[command.annotations.wasi]
+main-args = ["-t", "/app/public", "-S", "localhost:8080", "-d", "memory_limit=256M"]
+
+# Lệnh artisan cho các job (migrate, schedule:run).
+[[command]]
+name = "artisan"
+module = "php/php-eh:php"
+runner = "wasi"
+[command.annotations.wasi]
+main-args = ["/app/artisan"]

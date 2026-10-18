@@ -49,7 +49,8 @@ return [
             'url' => env('DB_URL'),
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
+            // Wasmer bơm tên database vào DB_NAME, không phải DB_DATABASE.
+            'database' => env('DB_DATABASE', env('DB_NAME', 'laravel')),
             'username' => env('DB_USERNAME', 'root'),
             'password' => env('DB_PASSWORD', ''),
             'unix_socket' => env('DB_SOCKET', ''),
@@ -61,9 +62,14 @@ return [
             'engine' => null,
             // Giữ phiên DB ở UTC như app. Nếu không, CURRENT_TIMESTAMP theo giờ máy chủ DB (Larabox là +07:00).
             'timezone' => env('DB_TIMEZONE', '+00:00'),
+            // TiDB không có SKIP LOCKED: đặt DB_SERVER_VERSION=5.7.25 để hàng đợi database dùng FOR UPDATE thường.
+            'version' => env('DB_SERVER_VERSION'),
             'options' => extension_loaded('pdo_mysql') ? array_filter([
                 Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
+                // MySQL của Wasmer dùng CA riêng: giữ TLS nhưng bỏ kiểm chuỗi chứng chỉ (DB_SSL_VERIFY=false).
+                // Dùng hằng của PDO: polyfill Pdo\Mysql trên PHP 8.3 bản Windows không khai báo hằng này.
+                PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => env('DB_SSL_VERIFY'),
+            ], fn ($value) => $value !== null && $value !== '') : [],
         ],
 
         'mariadb' => [

@@ -13,6 +13,34 @@ use Throwable;
  */
 class SpikeController extends Controller
 {
+    /** Môi trường chạy: SAPI, extension, thư mục ghi được. Không trả biến môi trường. */
+    public function info(): JsonResponse
+    {
+        $wanted = ['pdo_mysql', 'openssl', 'curl', 'mbstring', 'intl', 'bcmath', 'sodium', 'fileinfo', 'zip', 'gd'];
+
+        return response()->json([
+            'php' => PHP_VERSION,
+            'sapi' => PHP_SAPI,
+            'extensions' => collect($wanted)->mapWithKeys(fn ($ext) => [$ext => extension_loaded($ext)]),
+            'fastcgi_finish_request' => function_exists('fastcgi_finish_request'),
+            'writable' => [
+                'storage' => is_writable(storage_path('framework')),
+                'tmp' => is_writable(sys_get_temp_dir()),
+                'view_compiled' => config('view.compiled'),
+            ],
+            'max_execution_time' => ini_get('max_execution_time'),
+            'memory_limit' => ini_get('memory_limit'),
+        ]);
+    }
+
+    /** Chạy migration bằng HTTP, phòng khi job execute của Wasmer không chạy được artisan. */
+    public function migrate(): JsonResponse
+    {
+        $code = Artisan::call('migrate', ['--force' => true]);
+
+        return response()->json(['exit' => $code, 'output' => Artisan::output()]);
+    }
+
     /** Câu 1: đọc và ghi DB, xem kết nối có đi qua TLS không. */
     public function db(): JsonResponse
     {
