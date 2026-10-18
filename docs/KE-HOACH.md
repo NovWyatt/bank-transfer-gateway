@@ -65,13 +65,13 @@ SePay và Pay2S đã có sẵn webhook, cổng thanh toán và plugin. Dự án 
 
 **Shop tạo đơn:**
 1. Shop tạo đơn trên dashboard hoặc qua `POST /api/v1/orders`.
-2. App sinh mã đơn (ví dụ `DH7K3QX`), chuỗi VietQR và trang `/pay/DH7K3QX`.
-3. Khách quét QR. App ngân hàng tự điền số tiền và nội dung `DH7K3QX`.
+2. App sinh mã đơn (ví dụ `DH7K3QXM`), chuỗi VietQR và trang `/pay/DH7K3QXM`.
+3. Khách quét QR. App ngân hàng tự điền số tiền và nội dung `DH7K3QXM`.
 4. Ngân hàng báo biến động số dư cho SePay hoặc Pay2S, và họ gọi webhook về app.
 5. App xác thực request, lưu lại, bỏ bản trùng, tìm mã đơn rồi chuyển đơn sang `paid`.
 6. Trang `/pay/...` đang hỏi trạng thái sẽ thấy "Đã thanh toán". Shop nhận tin Telegram. Hệ thống của shop nhận webhook `order.paid`.
 
-**Khách gõ sai nội dung**, ví dụ `DH7K3OX` hoặc chỉ ghi tên:
+**Khách gõ sai nội dung**, ví dụ `DH7K3OXM` hoặc chỉ ghi tên:
 1. Giao dịch rơi vào hộp **Chưa khớp**.
 2. App lấy các đơn có thể là đơn đó, như đơn cùng số tiền hay đơn có mã gần giống.
 3. Mô hình chấm điểm từng đơn và gợi ý đơn cao điểm nhất, kèm độ tin cậy và lý do.
@@ -178,7 +178,7 @@ Mỗi adapter có **fixture JSON** lấy từ ví dụ trong tài liệu chính 
 
 ### 5.3 Mã đơn
 
-- Định dạng là `tiền tố + 6 ký tự`, ví dụ `DH7K3QX`.
+- Định dạng là `tiền tố + 6 ký tự`, ví dụ `DH7K3QXM`.
   - Tiền tố do shop đặt, dài 2–4 chữ cái, mặc định `DH`.
   - 6 ký tự lấy từ bảng `23456789ABCDEFGHJKMNPQRSTVWXYZ`: đã bỏ `0 1 I L O U` vì dễ đọc nhầm. Bảng có 30 ký tự, nên có khoảng 729 triệu tổ hợp.
 - Mã **không có gạch hay dấu**, vì nhiều ngân hàng xóa ký tự đặc biệt, đổi sang chữ hoa hoặc cắt bớt nội dung.
@@ -189,7 +189,7 @@ Mỗi adapter có **fixture JSON** lấy từ ví dụ trong tài liệu chính 
 **Chuẩn hóa nội dung chuyển khoản:**
 1. Bỏ dấu tiếng Việt, đổi sang chữ hoa.
 2. Thay ký tự không phải chữ hoặc số bằng dấu cách.
-3. Tìm mã theo **cả hai cách**: theo từ tách rời, và theo chuỗi liền. Ngân hàng hay chèn thêm tiền tố hoặc hậu tố dính liền vào nội dung, ví dụ `MBVCB.123456.DH7K3QX.CT tu ...`.
+3. Tìm mã theo **cả hai cách**: theo từ tách rời, và theo chuỗi liền. Ngân hàng hay chèn thêm tiền tố hoặc hậu tố dính liền vào nội dung, ví dụ `MBVCB.123456.DH7K3QXM.CT tu ...`.
 4. Ưu tiên `providerCode` nếu nhà cung cấp đã tách sẵn.
 
 **Quy tắc khớp tự động:**
@@ -220,9 +220,9 @@ Ví dụ payload:
   "type": "order.paid",
   "created_at": "2026-10-18T02:00:00Z",
   "data": {
-    "order": { "code": "DH7K3QX", "external_ref": "WOO-1234", "amount": 150000,
+    "order": { "code": "DH7K3QXM", "external_ref": "WOO-1234", "amount": 150000,
                "paid_amount": 150000, "status": "paid", "paid_at": "2026-10-18T02:00:00Z" },
-    "transaction": { "amount": 150000, "content": "DH7K3QX", "bank": "ACB", "reference": "FT2629…" }
+    "transaction": { "amount": 150000, "content": "DH7K3QXM", "bank": "ACB", "reference": "FT2629…" }
   }
 }
 ```
@@ -289,7 +289,7 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
 
 - Wyatt tự tạo bot qua @BotFather (mục 13).
 - Chủ shop nối Telegram qua link `t.me/<bot>?start=<mã dùng một lần>`. Webhook của bot nhận lệnh `/start <mã>` rồi lưu `chat_id`.
-- Mẫu tin: `+150.000đ · DH7K3QX · đã khớp`, hoặc `+200.000đ · chưa khớp · "chuyen tien ao"`.
+- Mẫu tin: `+150.000đ · DH7K3QXM · đã khớp`, hoặc `+200.000đ · chưa khớp · "chuyen tien ao"`.
 
 ### 5.10 Chế độ demo
 
