@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\PublicPageHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function (): void {
             Route::middleware('throttle:hooks')->group(base_path('routes/hooks.php'));
+            Route::middleware(['throttle:pay', PublicPageHeaders::class])->group(base_path('routes/pay.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

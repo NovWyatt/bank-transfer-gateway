@@ -38,5 +38,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('hooks', fn (Request $request) => Limit::perMinute(120)->by(
             'hooks:'.($request->route('uuid') ?? $request->ip()),
         ));
+
+        // Trang thanh toán hỏi trạng thái 5 giây một lần (12 request/phút); 120 cho thoải mái
+        // nhiều tab, đủ chặn dò mã đơn hàng loạt.
+        RateLimiter::for('pay', fn (Request $request) => Limit::perMinute(120)->by('pay:'.$request->ip()));
     }
 }

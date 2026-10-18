@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "app",
+      "runtimeExecutable": "C:/Users/Wyatt/Larabox/bin/php/8.3.33/php.exe",
+      "runtimeArgs": ["-d", "xdebug.mode=off", "artisan", "serve", "--host=127.0.0.1", "--port=8000"],
+      "port": 8000
+    }
+  ]
+}
