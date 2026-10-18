@@ -1,0 +1,16 @@
+#!/bin/sh
+# Quét bí mật (token, khóa, mật khẩu) trong phần đã stage trước khi commit.
+# Bật hook: git config core.hooksPath .githooks
+
+GITLEAKS="${GITLEAKS_BIN:-gitleaks}"
+
+if ! command -v "$GITLEAKS" >/dev/null 2>&1; then
+    if [ -x "/d/SETUP/gitleaks/gitleaks.exe" ]; then
+        GITLEAKS="/d/SETUP/gitleaks/gitleaks.exe"
+    else
+        echo "pre-commit: không tìm thấy gitleaks, bỏ qua bước quét bí mật." >&2
+        exit 0
+    fi
+fi
+
+exec "$GITLEAKS" git --staged --redact --no-banner
