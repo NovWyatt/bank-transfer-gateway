@@ -89,7 +89,7 @@ SePay và Pay2S đã có sẵn webhook, cổng thanh toán và plugin. Dự án 
 | Xác thực webhook | HMAC-SHA256 trên chuỗi `{timestamp}.{raw_body}`. Header `X-SePay-Signature: sha256={hex}` và `X-SePay-Timestamp` (giây unix). Lệch quá 5 phút thì từ chối. Hoặc dùng `Authorization: Apikey ...` | `Authorization: Bearer <token>`. Token chỉ hiện **một lần** khi tạo Hook. Trường `checksum` có trong payload, nhưng tài liệu không nói cách tính nên **không dựa vào** | HMAC-SHA256 (hex) trên object `data`: sắp khóa theo bảng chữ cái, ghép `k1=v1&k2=v2`, null thành chuỗi rỗng. Khóa là checksum key | **[cần kiểm tra]** |
 | Dạng payload | Một giao dịch mỗi request | `{"transactions": [...]}`. Tài liệu nói mỗi request một giao dịch, nhưng vẫn **phải duyệt cả mảng** | `{code, desc, success, data, signature}` | — |
 | Phản hồi xác nhận (ACK) | HTTP 200/201 và body đúng `{"success": true}`, trong 30 giây | Hai trang tài liệu nói khác nhau. Luôn trả **HTTP 200 và `{"success": true}`** là đúng với cả hai | 2xx | — |
-| Retry | Tối đa 7 lần, giãn theo dãy Fibonacci, khoảng 33 phút (từ kết quả tìm kiếm). Lịch chính xác ở trang "Error handling": **[cần kiểm tra]** | Gửi lại sau 60 giây, tối đa thêm 5 lần | **[cần kiểm tra]** | — |
+| Retry | 8 lần gửi (1 lần đầu + 7 lần lại), giãn theo Fibonacci: sau 1, 1, 2, 3, 5, 8, 13 phút, tổng khoảng 33 phút. Retry khi không kết nối được hoặc HTTP ngoài 2xx (đã xác nhận ở trang "Error handling", 18/10/2026) | Gửi lại sau 60 giây, tối đa thêm 5 lần | **[cần kiểm tra]** | — |
 | Ngân hàng | Nhiều | VCB, MB, ACB, BIDV, OCB… (danh sách đủ: **[cần kiểm tra]**) | — | — |
 | Thư viện PHP | `sepayvn/laravel-sepay` v1.2.3 (Laravel 9–13). Chỉ dùng để tham khảo, tự viết adapter | SDK Node.js/PHP cho cổng thanh toán | — | — |
 
@@ -102,6 +102,13 @@ Các trường trong payload:
   - `id`, `gateway`, `transactionDate`, `transactionNumber`, `accountNumber`, `content`
   - `transferType` (`IN` hoặc `OUT`, **viết hoa**, khác SePay), `transferAmount`, `checksum`
   - Không bắt buộc: `paymentCode`, `extraData` (`remitterName`, `remitterAccountNumber`, `issuerBankName`, `reciprocalBankCode`; thiếu thì là `"N/A"`), `billNumber`, `partnerRefId`
+
+**Ghi chú khi viết adapter (18/10/2026):**
+- SePay cho chọn kiểu body JSON, urlencoded hoặc multipart. Với multipart, PHP không giữ body gốc nên không kiểm được HMAC: hướng dẫn shop chọn `application/json`. Adapter vẫn đọc được urlencoded.
+- Nút "Gửi thử" của SePay gửi `id` giả, có thể là `0`, nên adapter nhận `id >= 0`.
+- SePay không nhận kiểu xác thực "None": kết nối phải có `secret` (HMAC) hoặc `api_key`.
+- Pay2S với tài khoản ảo gửi `accountNumber` = `963869` + số VA, không phải tài khoản gốc. Đường nhận phải tính đến khi tìm tài khoản ngân hàng.
+- Pay2S không ký body và không có timestamp: không chống được gửi lại request cũ, chỉ dựa vào khóa chống trùng theo `id`.
 
 **Thứ tự làm:**
 1. **SePay** trước: tài liệu rõ nhất, có HMAC, gói Free nhận tài khoản cá nhân.
@@ -773,7 +780,10 @@ Quy tắc:
 - Larastan mặc định chỉ đọc kiểu trả về khai báo của hàm `casts()` (`array<string, string>`), nên không thấy cast nào và coi cột `timestamp` là `string`. Đã bật `parseModelCastsMethod: true` trong `phpstan.neon`.
 - `freezeTime()` giữ cả micro giây, còn cột `timestamp` chỉ lưu đến giây: so `expires_at` với `now()` sẽ lệch. Test có so thời gian dùng `freezeSecond()`.
 
+- Pest 4 có sẵn hàm toàn cục `fixture()` (trả đường dẫn file trong `tests/Fixtures`). Tự khai báo hàm cùng tên làm PHP báo lỗi định nghĩa lại; hàm đọc nội dung đặt tên `fixtureContent()`.
+- Carbon 3 ném `InvalidFormatException` khi `createFromFormat` gặp chuỗi sai dạng, không trả `false` như `DateTime`. `PayloadReader` bắt lỗi này và đổi thành `InvalidPayload`.
 **Đã xong:**
 - Lõi thuần (không DB): mã đơn, chuỗi VietQR kèm CRC, chuẩn hóa nội dung và tìm mã đơn (62 test).
 - Bảng dữ liệu lõi, model, enum. Tách dữ liệu theo shop bằng trait `BelongsToShop` và holder `CurrentShop` (scoped: tự xóa sau mỗi request và job). Chưa đặt shop thì không lọc, để đường nhận webhook và lệnh console chạy trên mọi shop.
 - Danh sách 76 ngân hàng ở `database/data/banks.json`. Hành động `CreateOrder`: sinh mã, sinh lại khi trùng (phân biệt với trùng `external_ref` qua tên index), hạn mặc định 30 phút.
+- Adapter SePay (HMAC hoặc API key), Pay2S (Bearer) và Simulator (định dạng SePay, chỉ HMAC), cùng `PayloadReader` đọc trường theo kiểu và đổi giờ Việt Nam sang UTC. Fixture chép nguyên văn từ tài liệu chính thức ở `tests/Fixtures/providers/`.

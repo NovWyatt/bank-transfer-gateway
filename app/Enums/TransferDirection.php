@@ -8,8 +8,8 @@ enum TransferDirection: string
     case Out = 'out';
 
     /** SePay gửi "in"/"out", Pay2S gửi "IN"/"OUT". */
-    public static function fromProvider(string $value): self
+    public static function tryFromProvider(string $value): ?self
     {
-        return self::from(strtolower(trim($value)));
+        return self::tryFrom(strtolower(trim($value)));
     }
 }

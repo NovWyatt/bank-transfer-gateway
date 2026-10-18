@@ -1,0 +1,22 @@
+{
+  "transactions": [
+    {
+      "id": 10001,
+      "gateway": "ACB",
+      "transactionDate": "2026-10-11 09:00:00",
+      "transactionNumber": "DEMO10001",
+      "accountNumber": "P2S99999999",
+      "content": "THANHTOAN DH10001",
+      "transferType": "IN",
+      "transferAmount": 2000,
+      "checksum": "demo-user-webhook-10001",
+      "paymentCode": "DH10001",
+      "extraData": {
+        "remitterName": "NGUYEN VAN A",
+        "remitterAccountNumber": "0123456789",
+        "issuerBankName": "Ngan hang TMCP Quan Doi",
+        "reciprocalBankCode": "970422"
+      }
+    }
+  ]
+}
