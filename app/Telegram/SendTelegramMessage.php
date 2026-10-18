@@ -2,7 +2,6 @@
 
 namespace App\Telegram;
 
-use App\Models\AuditLog;
 use App\Models\Shop;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -40,8 +39,18 @@ class SendTelegramMessage implements ShouldQueue
         try {
             $telegram->sendMessage($chatId, $this->text);
         } catch (TelegramError $e) {
+            // Nhóm đã thành supergroup: chuyển shop sang chat mới rồi gửi lại ngay. Hỏng nữa thì hàng đợi thử lại với chat mới.
+            if ($e->migrateToChatId !== null) {
+                TelegramChats::migrate($chatId, $e->migrateToChatId);
+                $telegram->sendMessage($e->migrateToChatId, $this->text);
+
+                return;
+            }
+
             if ($e->chatUnreachable()) {
-                $this->disconnect($chatId, $e);
+                if (TelegramChats::disconnect($chatId, $e->getMessage()) > 0) {
+                    Log::info('Ngắt Telegram vì chat không nhận tin được.', ['shop_id' => $this->shopId, 'error' => $e->getMessage()]);
+                }
 
                 return;
             }
@@ -53,20 +62,6 @@ class SendTelegramMessage implements ShouldQueue
             }
 
             throw $e;
-        }
-    }
-
-    private function disconnect(string $chatId, TelegramError $e): void
-    {
-        // Chỉ ngắt nếu shop vẫn nối đúng chat đó: có thể shop đã nối lại sang chat khác.
-        $changed = Shop::query()
-            ->whereKey($this->shopId)
-            ->where('telegram_chat_id', $chatId)
-            ->update(['telegram_chat_id' => null]);
-
-        if ($changed > 0) {
-            AuditLog::record($this->shopId, null, 'telegram.disconnected', meta: ['reason' => $e->getMessage()]);
-            Log::info('Ngắt Telegram của shop vì chat không nhận tin được.', ['shop_id' => $this->shopId, 'error' => $e->getMessage()]);
         }
     }
 }

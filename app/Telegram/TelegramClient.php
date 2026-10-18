@@ -80,11 +80,13 @@ class TelegramClient
             ? $body['description']
             : 'HTTP '.$response->status();
         $retryAfter = is_array($body) ? ($body['parameters']['retry_after'] ?? null) : null;
+        $migrateTo = is_array($body) ? ($body['parameters']['migrate_to_chat_id'] ?? null) : null;
 
         throw new TelegramError(
             "Telegram từ chối {$method}: ".$this->redact($description),
             $response->status(),
             is_int($retryAfter) ? $retryAfter : null,
+            is_int($migrateTo) || is_string($migrateTo) ? (string) $migrateTo : null,
         );
     }
 

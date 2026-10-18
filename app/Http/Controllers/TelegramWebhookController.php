@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
 use App\Models\Shop;
+use App\Telegram\TelegramChats;
 use App\Telegram\TelegramLinkCodes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,13 +32,22 @@ class TelegramWebhookController
         $member = $request->input('my_chat_member');
 
         if (is_array($member) && in_array($member['new_chat_member']['status'] ?? null, ['kicked', 'left'], true)) {
-            $this->disconnectChat((string) ($member['chat']['id'] ?? ''), 'bot bị chặn hoặc bị đuổi khỏi chat');
+            TelegramChats::disconnect((string) ($member['chat']['id'] ?? ''), 'bot bị chặn hoặc bị đuổi khỏi chat');
 
             return response()->noContent();
         }
 
         $chatId = (string) $request->input('message.chat.id', '');
         $text = trim((string) $request->input('message.text', ''));
+
+        // Nhóm vừa nâng cấp thành supergroup: Telegram báo chat id mới, chuyển shop sang trước khi có tin bị từ chối.
+        $migrateTo = (string) $request->input('message.migrate_to_chat_id', '');
+
+        if ($chatId !== '' && $migrateTo !== '') {
+            TelegramChats::migrate($chatId, $migrateTo);
+
+            return response()->noContent();
+        }
 
         if ($chatId === '' || $text === '') {
             return response()->noContent();
@@ -52,7 +62,7 @@ class TelegramWebhookController
         }
 
         if (preg_match('/^\/stop(?:@\w+)?$/', $text) === 1) {
-            $count = $this->disconnectChat($chatId, 'người dùng gõ /stop');
+            $count = TelegramChats::disconnect($chatId, 'người dùng gõ /stop');
 
             return $this->reply($chatId, $count > 0 ? 'Đã ngừng báo tiền về vào chat này.' : 'Chat này chưa nối với shop nào.');
         }
@@ -74,22 +84,6 @@ class TelegramWebhookController
         AuditLog::record($shop->getKey(), null, 'telegram.connected', $shop, ['chat_id' => $chatId]);
 
         return "Đã nối với shop {$shop->name}. Tiền về sẽ báo ở đây. Gõ /stop để ngừng.";
-    }
-
-    private function disconnectChat(string $chatId, string $reason): int
-    {
-        if ($chatId === '') {
-            return 0;
-        }
-
-        $shops = Shop::query()->where('telegram_chat_id', $chatId)->get();
-
-        foreach ($shops as $shop) {
-            $shop->forceFill(['telegram_chat_id' => null])->save();
-            AuditLog::record($shop->getKey(), null, 'telegram.disconnected', $shop, ['reason' => $reason]);
-        }
-
-        return $shops->count();
     }
 
     private function reply(string $chatId, string $text): JsonResponse

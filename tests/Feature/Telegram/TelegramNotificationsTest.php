@@ -128,7 +128,36 @@ it('chat không còn nhận tin thì ngắt Telegram của shop và ghi nhật k
     $job->assertNotFailed();
     expect($this->shop->fresh()->telegram_chat_id)->toBeNull()
         ->and(AuditLog::query()->where('action', 'telegram.disconnected')->exists())->toBeTrue();
-})->skip('Chờ TelegramError::chatUnreachable()');
+});
+
+it('lỗi 400 không phải do chat (tin quá dài) thì không ngắt mà để hàng đợi thử lại', function (): void {
+    Http::fake(['api.telegram.org/*' => Http::response([
+        'ok' => false, 'error_code' => 400, 'description' => 'Bad Request: message is too long',
+    ], 400)]);
+
+    expect(fn () => (new SendTelegramMessage($this->shop->getKey(), 'tin'))->handle(app(TelegramClient::class)))
+        ->toThrow(TelegramError::class, 'message is too long');
+
+    expect($this->shop->fresh()->telegram_chat_id)->toBe('5550001');
+});
+
+it('nhóm đã thành supergroup thì chuyển shop sang chat mới và gửi lại vào đó', function (): void {
+    $other = Shop::factory()->create(['telegram_chat_id' => '5550001']);
+    Http::fake(['api.telegram.org/*' => Http::sequence()
+        ->push(['ok' => false, 'error_code' => 400, 'description' => 'Bad Request: group chat was upgraded to a supergroup chat', 'parameters' => ['migrate_to_chat_id' => -1001234567890]], 400)
+        ->push(['ok' => true, 'result' => ['message_id' => 2]]),
+    ]);
+
+    $job = (new SendTelegramMessage($this->shop->getKey(), 'tin'))->withFakeQueueInteractions();
+    $job->handle(app(TelegramClient::class));
+
+    $job->assertNotFailed();
+    Http::assertSentCount(2);
+    Http::assertSent(fn (Request $request): bool => $request['chat_id'] === '-1001234567890');
+    expect($this->shop->fresh()->telegram_chat_id)->toBe('-1001234567890')
+        ->and($other->fresh()->telegram_chat_id)->toBe('-1001234567890')
+        ->and(AuditLog::query()->where('action', 'telegram.migrated')->count())->toBe(2);
+});
 
 it('tin báo endpoint tự tắt có URL và lý do', function (): void {
     Queue::fake();

@@ -96,6 +96,22 @@ it('/stop ngắt mọi shop đang gửi vào chat đó', function (): void {
         ->and($unrelated->fresh()->telegram_chat_id)->toBe('999');
 });
 
+it('nhóm nâng cấp thành supergroup thì chuyển shop sang chat id mới', function (): void {
+    $this->shop->forceFill(['telegram_chat_id' => '-4001'])->save();
+
+    telegramUpdate([
+        'update_id' => 3,
+        'message' => [
+            'message_id' => 9,
+            'chat' => ['id' => -4001, 'type' => 'group'],
+            'date' => now()->getTimestamp(),
+            'migrate_to_chat_id' => -1009876543210,
+        ],
+    ])->assertNoContent();
+
+    expect($this->shop->fresh()->telegram_chat_id)->toBe('-1009876543210');
+});
+
 it('người dùng chặn bot thì ngắt chat đó', function (): void {
     $this->shop->forceFill(['telegram_chat_id' => '5550001'])->save();
 

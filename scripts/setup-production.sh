@@ -15,8 +15,9 @@
 #   bash scripts/setup-production.sh ci          WASMER_TOKEN cho GitHub Actions (tạo ở wasmer.io/settings/access-tokens)
 #   bash scripts/setup-production.sh telegram    token bot (tạo qua @BotFather), tên bot, secret webhook
 #   bash scripts/setup-production.sh apply       redeploy để secret có hiệu lực, rồi migrate và đăng ký webhook Telegram
-#   bash scripts/setup-production.sh bootstrap   tạo shop đầu tiên, in link mời owner
-#   bash scripts/setup-production.sh all         chạy lần lượt cả năm bước trên
+#   bash scripts/setup-production.sh migrate     chỉ gọi /internal/deploy (sau khi đã deploy bản mới bằng tay)
+#   bash scripts/setup-production.sh bootstrap   tạo shop đầu tiên, ghi link mời owner vào file cạnh bản sao lưu
+#   bash scripts/setup-production.sh all         chạy lần lượt core, ci, telegram, apply, bootstrap
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +26,7 @@ REPO="NovWyatt/bank-transfer-gateway"
 APP_URL="${APP_URL:-https://bank-transfer-gateway.wasmer.app}"
 WASMER="${WASMER:-D:/SETUP/wasmer/bin/wasmer.exe}"
 BACKUP="${BACKUP:-/d/Wyatt/secrets/bank-transfer-gateway.env}"
+CLOUDFLARE_EMAIL="rirtar.lofi@gmail.com"
 
 command -v openssl >/dev/null || { echo "Cần openssl (có sẵn trong Git Bash)." >&2; exit 1; }
 
@@ -57,12 +59,6 @@ wasmer_secret() {
     fi
 }
 
-confirm() {
-    local answer
-    read -r -p "$1 [y/N] " answer
-    [ "$answer" = "y" ] || [ "$answer" = "Y" ]
-}
-
 step_core() {
     echo "== core: APP_KEY, INTERNAL_TICK_SECRET, INTERNAL_DEPLOY_SECRET"
     "$WASMER" whoami
@@ -88,13 +84,13 @@ step_core() {
     wasmer_secret INTERNAL_TICK_SECRET "$INTERNAL_TICK_SECRET"
     wasmer_secret INTERNAL_DEPLOY_SECRET "$INTERNAL_DEPLOY_SECRET"
 
-    echo "  Cloudflare: kiểm tra tài khoản trước khi đặt TICK_SECRET cho Worker btg-edge."
-    (cd "$ROOT/edge" && npx wrangler whoami)
-    if confirm "  Tài khoản ở trên là rirtar.lofi@gmail.com?"; then
-        (cd "$ROOT/edge" && printf '%s' "$INTERNAL_TICK_SECRET" | npx wrangler secret put TICK_SECRET >/dev/null)
-        echo "  Cloudflare: đã đặt TICK_SECRET cho btg-edge"
+    # Chỉ đặt secret cho Worker khi wrangler đang đăng nhập đúng tài khoản rirtar.lofi (mục 10a).
+    if (cd "$ROOT/edge" && WRANGLER_SEND_METRICS=false npx wrangler whoami 2>&1) | grep -q "associated with the email ${CLOUDFLARE_EMAIL}"; then
+        (cd "$ROOT/edge" && printf '%s' "$INTERNAL_TICK_SECRET" | WRANGLER_SEND_METRICS=false npx wrangler secret put TICK_SECRET >/dev/null)
+        echo "  Cloudflare ($CLOUDFLARE_EMAIL): đã đặt TICK_SECRET cho btg-edge"
     else
-        echo "  Bỏ qua Worker. Chạy npx wrangler logout rồi npx wrangler login bằng rirtar.lofi, xong chạy lại bước core." >&2
+        echo "  Wrangler không đăng nhập bằng $CLOUDFLARE_EMAIL: bỏ qua Worker." >&2
+        echo "  Chạy npx wrangler logout rồi npx wrangler login bằng $CLOUDFLARE_EMAIL (trong edge/), xong chạy lại bước core." >&2
     fi
 
     printf '%s' "$INTERNAL_DEPLOY_SECRET" | gh secret set INTERNAL_DEPLOY_SECRET --repo "$REPO"
@@ -143,6 +139,14 @@ step_apply() {
     echo "  Đã yêu cầu redeploy. Chờ 30 giây cho bản mới chạy."
     sleep 30
 
+    step_migrate
+}
+
+step_migrate() {
+    echo "== migrate: gọi /internal/deploy (migrate, đăng ký webhook Telegram)"
+    load_backup
+    : "${INTERNAL_DEPLOY_SECRET:?Chưa có INTERNAL_DEPLOY_SECRET, chạy bước core trước}"
+
     APP_URL="$APP_URL" INTERNAL_SECRET="$INTERNAL_DEPLOY_SECRET" bash "$ROOT/scripts/internal-call.sh" /internal/deploy
 }
 
@@ -151,14 +155,19 @@ step_bootstrap() {
     load_backup
     : "${INTERNAL_DEPLOY_SECRET:?Chưa có INTERNAL_DEPLOY_SECRET, chạy bước core trước}"
 
-    local name slug email body
-    read -r -p "  Tên shop: " name
-    read -r -p "  Slug trên đường dẫn /app/<slug> (chữ thường, số, gạch nối): " slug
-    read -r -p "  Email của owner: " email
+    # Nhận sẵn qua biến môi trường SHOP_NAME, SHOP_SLUG, OWNER_EMAIL; thiếu thì hỏi.
+    local name="${SHOP_NAME:-}" slug="${SHOP_SLUG:-}" email="${OWNER_EMAIL:-}" body
+    [ -n "$name" ] || read -r -p "  Tên shop: " name
+    [ -n "$slug" ] || read -r -p "  Slug trên đường dẫn /app/<slug> (chữ thường, số, gạch nối): " slug
+    [ -n "$email" ] || read -r -p "  Email của owner: " email
     body="$(NAME="$name" SLUG="$slug" EMAIL="$email" node -e 'process.stdout.write(JSON.stringify({shop_name: process.env.NAME, slug: process.env.SLUG, owner_email: process.env.EMAIL}))')"
 
-    APP_URL="$APP_URL" INTERNAL_SECRET="$INTERNAL_DEPLOY_SECRET" bash "$ROOT/scripts/internal-call.sh" /internal/bootstrap "$body"
-    echo "  Mở invitation_url ở trên để đặt mật khẩu cho owner. Link dùng một lần."
+    # Link mời là bí mật dùng một lần: ghi vào file cạnh bản sao lưu, không in ra màn hình.
+    local out
+    out="$(dirname "$BACKUP")/bank-transfer-gateway-owner-invite.json"
+    APP_URL="$APP_URL" INTERNAL_SECRET="$INTERNAL_DEPLOY_SECRET" bash "$ROOT/scripts/internal-call.sh" /internal/bootstrap "$body" > "$out"
+    chmod 600 "$out" 2>/dev/null || true
+    echo "  Đã tạo shop $slug. Link mời owner ($email) nằm trong $out, mở link đó để đặt mật khẩu. Link dùng một lần."
 }
 
 case "${1:-}" in
@@ -166,6 +175,7 @@ case "${1:-}" in
     ci) step_ci ;;
     telegram) step_telegram ;;
     apply) step_apply ;;
+    migrate) step_migrate ;;
     bootstrap) step_bootstrap ;;
     all) step_core; step_ci; step_telegram; step_apply; step_bootstrap ;;
     *) sed -n '2,20p' "$0"; exit 1 ;;
