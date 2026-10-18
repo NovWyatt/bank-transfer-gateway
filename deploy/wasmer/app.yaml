@@ -49,9 +49,9 @@ jobs:
         command: artisan
         cli_args: ["schedule:run"]
 
-  # Câu 3, cách B: gọi một URL; app tự chạy việc đến hạn.
+  # Câu 3, cách B: gọi một URL; app tự chạy việc đến hạn. Thử trigger dạng khoảng thời gian.
   - name: schedule-fetch
-    trigger: '* * * * *'
+    trigger: 1m
     action:
       fetch:
         path: /spike/tick
