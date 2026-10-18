@@ -14,4 +14,9 @@ Artisan::command('spike:heartbeat {source=schedule}', function (string $source) 
     DB::table('spike_heartbeats')->insert(['source' => $source, 'note' => gethostname() ?: null]);
 })->purpose('Ghi một dòng heartbeat cho spike Wasmer');
 
-Schedule::command('spike:heartbeat')->everyMinute()->when(fn () => (bool) config('spike.enabled'));
+// Dùng Schedule::call (chạy trong tiến trình hiện tại), không dùng Schedule::command:
+// command() phải tìm đường dẫn php bằng exec(), mà WebAssembly trên Wasmer không fork được.
+Schedule::call(fn () => Artisan::call('spike:heartbeat'))
+    ->name('spike-heartbeat')
+    ->everyMinute()
+    ->when(fn () => (bool) config('spike.enabled'));

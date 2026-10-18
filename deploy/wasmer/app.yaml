@@ -54,5 +54,8 @@ jobs:
     trigger: '* * * * *'
     action:
       fetch:
-        path: /spike/tick?token=__SPIKE_TOKEN__
+        path: /spike/tick
         timeout: 30s
+        headers:
+          - name: X-Spike-Token
+            value: __SPIKE_TOKEN__
