@@ -580,7 +580,7 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 - Sai tài khoản thì dừng lại. Wyatt tự chạy `npx wrangler logout`, rồi `npx wrangler login` bằng rirtar.lofi.
 - Không dùng connector Cloudflare của claude.ai cho dự án này, trừ khi Wyatt xác nhận connector đó là tài khoản rirtar.lofi.
 - Không đọc các file chứa token: `%APPDATA%\xdg.config\.wrangler\config\default.toml`, `cert.pem` và các file `*.json` của cloudflared.
-- Ở lần làm đầu, kiểm tra zone `wyattos.cyou` có nằm trong tài khoản rirtar.lofi không: **[cần kiểm tra]**.
+- Zone `wyattos.cyou` nằm trong tài khoản rirtar.lofi (gói Free, account id trùng với `wrangler whoami`; kiểm ngày 18/10/2026).
 
 **1. Tunnel cho máy phát triển (GĐ1)**
 - Cách nhanh: quick tunnel `cloudflared tunnel --url http://localhost:8000`, không cần tài khoản. Nhược điểm: địa chỉ `*.trycloudflare.com` đổi mỗi lần chạy, nên phải dán lại URL webhook ở SePay và Pay2S.
@@ -601,9 +601,11 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 - `cloudflared` bản portable đặt ở `D:\SETUP\cloudflared`. File credentials cũng để ở đó. Không commit file này, không đọc nội dung của nó.
 
 **2. DNS cho production (GĐ3)**
-- `pay.wyattos.cyou` trỏ về Wasmer theo hướng dẫn tên miền riêng của Wasmer. **[cần kiểm tra]:** loại bản ghi, và lúc cấp chứng chỉ phải để DNS only hay để proxied được.
-- Đặt SSL/TLS ở chế độ **Full (strict)**.
-- Claude soạn sẵn bản ghi chính xác. Wyatt tự thêm trên dashboard, hoặc cho phép Claude thêm qua Brave (đã đăng nhập rirtar.lofi). Claude hỏi lại đúng lúc làm.
+- **Đã làm (18/10/2026, Wyatt giao Claude tự thêm qua Brave):**
+  1. Dashboard Wasmer, app `bank-transfer-gateway`, Settings → Domains: thêm `pay.wyattos.cyou`. Wasmer không nhận tên miền qua `app.yaml` hay CLI, chỉ qua dashboard.
+  2. Cloudflare, zone `wyattos.cyou`: bản ghi `CNAME pay → 19hni9t8ng6p.id.wasmer.app`, **DNS only** (Wasmer dặn tắt proxy lúc xác thực).
+  3. Wasmer tự cấp chứng chỉ Let's Encrypt cho `pay.wyattos.cyou` sau vài phút; dashboard báo "Valid configuration". `bank-transfer-gateway.wasmer.app` vẫn chạy song song.
+- **Quyết định: giữ DNS only**, chưa bật proxy. Lý do: Wasmer tự gia hạn chứng chỉ (dễ hỏng khi Cloudflare đứng trước); zone có nhiều dịch vụ khác nên không đổi SSL mode hay Bot Fight Mode của cả zone; Bot Fight Mode chặn được webhook của ngân hàng khi bật proxy. Hệ quả: các quy tắc ở phần 3 dưới đây chưa có tác dụng, app tự lo giới hạn tần suất. Xem lại ở GĐ5 nếu cần cache QR ở edge.
 
 **3. Quy tắc cache và bảo vệ (gói Free)**
 
@@ -694,7 +696,7 @@ Mỗi giai đoạn: commit nhỏ, viết tiếng Việt. Cuối giai đoạn c�
 9. **Cloudflare** (tài khoản rirtar.lofi@gmail.com, mục 10a):
    1. Chạy `cloudflared tunnel login` một lần, ở GĐ1.
    2. Chạy `npx wrangler login` nếu `whoami` không ra rirtar.lofi.
-   3. Thêm bản ghi DNS cho `pay.wyattos.cyou`, hoặc cho phép Claude thêm qua Brave (Claude hỏi lại lúc làm).
+   3. ~~Thêm bản ghi DNS cho `pay.wyattos.cyou`~~: Claude đã thêm qua Brave ngày 18/10/2026 (mục 10a, phần 2).
    4. Tắt Bot Fight Mode nếu đang bật.
    5. Secret `TICK_SECRET` của Worker: bước `core` của `scripts/setup-production.sh` tự đặt sau khi hỏi xác nhận tài khoản.
 10. **Chuyển khoản thử 2.000đ** từ một tài khoản khác (ngân hàng thứ hai hoặc người nhà) vào tài khoản đã nối.
@@ -750,9 +752,9 @@ Push `profile.yml` và `media/` lên thì GitHub Actions tự vẽ lại profile
 - Chuỗi VietQR quét đúng trên ít nhất hai app ngân hàng.
 - Cloudflare (mục 10a):
   - ~~Phiên đăng nhập wrangler cũ trên máy là tài khoản nào~~: rirtar.lofi@gmail.com (18/10/2026).
-  - Zone `wyattos.cyou` có ở tài khoản rirtar.lofi không.
-  - Bot Fight Mode đang bật hay tắt.
-  - Cách trỏ tên miền riêng về Wasmer.
+  - ~~Zone `wyattos.cyou` có ở tài khoản rirtar.lofi không~~: có.
+  - Bot Fight Mode đang bật hay tắt (chỉ cần khi bật proxy cho `pay`).
+  - ~~Cách trỏ tên miền riêng về Wasmer~~: CNAME tới `<id>.id.wasmer.app` do dashboard Wasmer đưa, DNS only.
   - Hạn mức Queues ở gói Free.
   - IP gửi webhook của SePay và Pay2S.
 
@@ -897,6 +899,7 @@ Quy tắc:
 - Telegram theo mục 5.9: nối bằng link `t.me/<bot>?start=<mã một lần, 15 phút>` (nối được cả vào nhóm), `/stop` và chặn bot thì ngắt, tin tiền về `+150.000đ · DH7K3QXM · đã thanh toán` xếp hàng trong cùng DB transaction với giao dịch, báo khi webhook tự tắt. Bot trả lời ngay trong phản hồi webhook, không gọi Bot API. Trang dashboard **Thông báo Telegram** cho owner: nối, gửi thử, ngắt.
 - Worker `btg-edge` (thư mục `edge/`) chạy trên tài khoản rirtar.lofi, cron `* * * * *`. Đã thấy gọi tick thật lúc 13:29 UTC ngày 18/10/2026: HTTP 200, chạy `orders-expire` và `webhooks-deliver` trong 108 ms.
 - App `bank-transfer-gateway` chạy trên Wasmer (`https://bank-transfer-gateway.wasmer.app`, vùng us-losa1, MySQL của Wasmer). Đã đặt `APP_KEY` và secret của tick, deploy (bước `core`), migrate đủ 16 migration qua `/internal/deploy`. `/`, `/up`, `/app/login`, `/docs/api` trả 200; tick không ký trả 401.
+- Tên miền **`https://pay.wyattos.cyou`** chạy (CNAME tới Wasmer, DNS only, chứng chỉ Let's Encrypt tới 16/01/2027). `APP_URL` của app, Worker, script cài đặt và CI đã chuyển sang tên miền này; Worker gọi tick qua tên miền mới, HTTP 200.
 - Shop đầu tiên `wyatt` ("Shop của Wyatt"), owner `rirtar.lofi@gmail.com`. Link mời ở `D:\Wyatt\secrets\bank-transfer-gateway-owner-invite.json`, hết hạn 25/10/2026; trang mời mở được trên production.
 - `TelegramError::chatUnreachable()`: 403 luôn ngắt; 400 chỉ khi "chat not found"; 401 (token bot sai) và lỗi 400 do app thì không. Nhóm nâng cấp thành supergroup thì chuyển shop sang chat id mới.
 - CI có job deploy: chạy trên `main` sau khi test xanh, chỉ khi đã có biến `WASMER_OWNER`; đóng gói, `wasmer deploy`, rồi gọi `/internal/deploy`.
@@ -907,5 +910,5 @@ Quy tắc:
 - Wyatt chạy `bash scripts/setup-production.sh ci` (cần token tạo ở wasmer.io/settings/access-tokens) để push lên main là tự deploy. Tới lúc đó, deploy bằng tay: `scripts/build-wasmer.sh`, `wasmer deploy --dir build/wasmer`, rồi `setup-production.sh migrate`.
 - Wyatt tạo bot qua @BotFather rồi chạy `bash scripts/setup-production.sh telegram`, sau đó `apply`.
 - Thử `CURLOPT_RESOLVE` và hàm `progress` trên Wasmer bằng một endpoint webhook thật. **[cần kiểm tra]**
-- Tên miền `pay.wyattos.cyou`, SSL Full (strict), các quy tắc cache và bảo vệ (mục 10a). Claude soạn bản ghi DNS, hỏi lại Wyatt lúc làm.
+- Quy tắc cache và bảo vệ của Cloudflare (mục 10a, phần 3): chỉ có tác dụng khi bật proxy, đang để DNS only.
 - Nối SePay thật, chuyển thật 2.000đ, ghi GIF luồng từ chuyển khoản tới Telegram.
