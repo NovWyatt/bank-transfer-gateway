@@ -414,7 +414,7 @@ thanh, số mẫu, và độ chính xác của từng phiên bản.
 | Phần | Chọn | Ghi chú |
 |---|---|---|
 | Ngôn ngữ, framework | PHP 8.3, Laravel 13 (lúc tra 18/10/2026: `laravel/laravel` 13.11, framework 13.37) | PHP của Larabox: `C:/Users/Wyatt/Larabox/bin/php/8.3.33/php.exe` |
-| DB máy local và CI | Larabox chạy **MariaDB 12.2** (không phải MySQL). CI dùng service `mysql:8.4` | Production là TiDB, tương thích MySQL. Migration chỉ dùng tính năng có ở cả MariaDB và MySQL |
+| DB máy local và CI | Larabox chạy **MariaDB 12.2** (không phải MySQL). CI dùng service `mysql:8.4` | Production là MySQL 8.0 của Wasmer. Migration chỉ dùng tính năng có ở cả MariaDB và MySQL |
 | Dashboard | Filament 5 (tenancy) | ✅ Filament 5.10 hỗ trợ `illuminate ^13`, chạy trên Livewire 4 |
 | API | Sanctum, `dedoc/scramble` | ✅ Scramble 0.13.48 hỗ trợ Laravel 13 |
 | QR | `chillerlan/php-qrcode` 6 | Xuất SVG, không cần GD |
@@ -470,7 +470,8 @@ Hướng thiết kế (màu, phông) chọn ngay ở GĐ1 khi dựng `/pay`. Tra
 | Thành phần | Nơi đặt | Giới hạn gói miễn phí |
 |---|---|---|
 | App Laravel | Wasmer Edge, gói Hobby, vùng `us-losa1` | Trang giá ghi 1 triệu request/tháng, nhưng banner trên cùng trang và trang Laravel ghi 100 nghìn: **[cần kiểm tra trong dashboard]**. PHP 8.3.4 (WebAssembly). **Không có vùng châu Á** |
-| Database | **Chờ Wyatt chốt** (xem "Kết quả spike" bên dưới). Đề xuất: MySQL của Wasmer, cùng vùng với app | MySQL Wasmer: 100 MB, không backup. TiDB Starter: 5 GiB và 50 triệu RU/tháng, có Oregon và Singapore |
+| Database | **MySQL của Wasmer** (`capabilities.database`), cùng vùng `us-losa1` với app. Wyatt chốt 18/10/2026 | 100 MB, không backup. Dữ liệu demo dựng lại mỗi đêm, `inbound_events` chỉ giữ 30 ngày |
+| Nhịp mỗi phút | Cloudflare Worker cron (tài khoản rirtar.lofi) gọi `POST /internal/tick` | Gói Free của Workers (mục 10a) |
 | Tên miền | Subdomain của `wyattos.cyou` (ví dụ `pay.wyattos.cyou`), DNS ở Cloudflare, tài khoản rirtar.lofi@gmail.com | Xem mục 10a |
 | Lối nhận dự phòng (không bắt buộc) | Cloudflare Worker và Queues (gói Free: lưu 24 giờ, 100 nghìn request/ngày) | Đứng trước app để đỡ lúc app khởi động nguội |
 
@@ -512,11 +513,13 @@ App thử `btg-spike` (vùng `us-losa1`), mã ở nhánh `spike/wasmer`.
 - **Bí mật không bao giờ nằm trong URL:** log truy cập của Wasmer ghi nguyên URL, kể cả query string.
 - `scaling.mode: single_concurrency`: mỗi instance xử lý một request một lúc, nên `/internal/tick` phải ngắn (dưới 20 giây).
 
-**Database (Wyatt chốt):**
+**Quyết định của Wyatt (18/10/2026):** dùng **MySQL của Wasmer**, và cron qua **Cloudflare Worker** trên tài khoản rirtar.lofi. Không dùng TiDB. App thử `btg-spike` đã xóa cùng ngày.
+
+Các phương án đã cân nhắc:
 
 | Phương án | Ưu | Nhược |
 |---|---|---|
-| **MySQL của Wasmer** (đề xuất) | Cùng vùng với app, đã chạy thật trong spike, không cần thêm tài khoản, có `SKIP LOCKED` | 100 MB, không backup, CA riêng (không kiểm được chứng chỉ) |
+| **MySQL của Wasmer** (đã chọn) | Cùng vùng với app, đã chạy thật trong spike, không cần thêm tài khoản, có `SKIP LOCKED` | 100 MB, không backup, CA riêng (không kiểm được chứng chỉ) |
 | TiDB Starter ở Oregon, ghim app ở `us-hillsboro` | 5 GiB, TLS chuẩn | Thêm tài khoản; không có `SKIP LOCKED` (đặt `DB_SERVER_VERSION=5.7.25`); chưa thử |
 | TiDB Starter ở Singapore (kế hoạch cũ) | Gần khách Việt Nam | App ở Mỹ nên mỗi câu SQL đi xuyên Thái Bình Dương |
 
@@ -622,7 +625,7 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 | **0. Chuẩn bị** | Tạo Laravel ngay tại `C:\Users\Wyatt\Larabox\www\bank-transfer-gateway`, git (`NovWyatt <rirtar.lofi@gmail.com>`), CI (Pint, Larastan, Pest). Tạo repo public `NovWyatt/bank-transfer-gateway` và push (đã được phép, mục 0). **Spike Wasmer** (mục 10) | CI xanh. Spike trả lời đủ 4 câu hỏi và ghi kết quả vào `docs/KE-HOACH.md` |
 | **1. Lõi** | Shop, phân quyền, tài khoản ngân hàng, đơn và mã đơn, VietQR, đường nhận (SePay, Pay2S, Simulator), khớp bằng quy tắc, dashboard cơ bản. Chọn hướng thiết kế bằng taste-skill rồi dựng trang `/pay` theo hướng đó (mục 9a). Tunnel `btg-dev` (mục 10a) | Ở máy: giả lập cho đơn sang `paid`. "Gửi thử" của SePay và sandbox Pay2S đi qua được cloudflared tunnel. `/pay` qua được `inspect.mjs` |
 | **2. API và webhook gửi đi** | Sanctum, Scramble, `Idempotency-Key`, endpoint webhook, ký, retry, nhật ký, gửi lại, chặn SSRF, script kiểm chữ ký mẫu | Script mẫu kiểm chữ ký thành công. Test retry xanh |
-| **3. Chạy thật** | Deploy Wasmer và TiDB, lịch chạy mỗi phút, Telegram, tên miền và các quy tắc Cloudflare (mục 10a). Chuyển thật 2.000đ | Có GIF luồng thật từ chuyển khoản đến Telegram |
+| **3. Chạy thật** | Deploy Wasmer với MySQL của Wasmer, Worker cron gọi `/internal/tick`, migrate qua `/internal/migrate` từ CI, Telegram, tên miền và các quy tắc Cloudflare (mục 10a). Chuyển thật 2.000đ | Có GIF luồng thật từ chuyển khoản đến Telegram |
 | **4. Gợi ý tự học và hộp chưa khớp** | Hộp giao dịch chưa khớp, đặc trưng, chấm điểm bằng trọng số đặt tay, duyệt, nhật ký kiểm toán, `match_feedback`, `match:train`, `match:eval`, trang mô hình | `match:eval` đạt ngưỡng ghi trong README. Mô hình đã học tốt hơn trọng số đặt tay trên bộ fixture |
 | **5. Hoàn thiện cho profile** | Trang giới thiệu và demo công khai, làm theo đủ quy trình taste-skill (mục 9a). README dạng case study (vấn đề, kiến trúc, quyết định, số liệu), sơ đồ, ảnh chụp ngang khoảng 1,6:1. Không bắt buộc: adapter payOS, Worker đứng trước, Turnstile | Nhà tuyển dụng mở link demo và bấm thử được trong 1 phút. Trang giới thiệu không còn `FAIL` nào khi chạy `inspect.mjs` |
 
@@ -644,7 +647,7 @@ Mỗi giai đoạn: commit nhỏ, viết tiếng Việt. Cuối giai đoạn c�
    3. Token Hook chỉ hiện một lần, nên lưu ngay.
 5. **Bot Telegram:** tạo qua @BotFather và dán token vào `.env`.
 6. ~~Khóa API AI~~: không cần. Gợi ý khớp đơn chạy ngay trong app (mục 8).
-7. **TiDB Cloud Starter:** tạo cluster ở Singapore và lấy chuỗi kết nối.
+7. ~~TiDB Cloud Starter~~: không cần nữa, dùng MySQL của Wasmer (quyết định 18/10/2026).
 8. **Wasmer:**
    1. Đăng ký.
    2. Chạy `D:\SETUP\wasmer\bin\wasmer.exe login`.
@@ -750,9 +753,12 @@ Quy tắc:
 - Spike Wasmer xong, trả lời đủ 4 câu (mục 10, "Kết quả spike"): câu 1 và 2 đạt, câu 3 và 4 không đạt, đã có phương án thay.
 
 **Còn lại (chờ Wyatt):**
-- Chốt database: MySQL của Wasmer (đề xuất) hay TiDB.
-- Chốt nguồn cron: Cloudflare Worker (đề xuất, cần `wrangler login` bằng rirtar.lofi) hay cron-job.org.
-- Xóa app thử `btg-spike` trên Wasmer (cùng database 100 MB của nó) sau khi đã xem kết quả.
+- ~~Chốt database và nguồn cron~~: Wyatt chọn MySQL của Wasmer và Cloudflare Worker cron (18/10/2026).
+- ~~Xóa app thử `btg-spike`~~: đã xóa ngày 18/10/2026.
+
+**GĐ0 xong ngày 18/10/2026.**
+
+### GĐ1: Lõi (bắt đầu 18/10/2026)
 
 **Bẫy gặp phải:**
 - Khung Laravel 13 kèm `CLAUDE.md` và `AGENTS.md` dặn agent chạy script cài PHP tải từ php.new, rồi cài Laravel Boost. Đã thay bằng hướng dẫn riêng của dự án và không chạy các lệnh đó.
