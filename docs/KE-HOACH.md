@@ -887,20 +887,25 @@ Quy tắc:
 - Bản npm mới chặn script cài của gói cho tới khi duyệt: `npm install-scripts approve esbuild workerd`, ghi vào `allowScripts` của `edge/package.json`.
 - `node --test <thư mục>` coi thư mục là một file. Dùng glob `"edge/test/*.test.mjs"` (Node 21 trở lên; runner Ubuntu mặc định Node 20 nên CI cài Node 24).
 - Token bot nằm trong đường dẫn URL của Bot API: lỗi kết nối của Guzzle in nguyên URL. `TelegramClient` xóa token khỏi mọi thông điệp lỗi trước khi ném ra.
-- Wasmer CLI có `wasmer app secrets reveal`: Claude không dùng lệnh này. Secret do `scripts/setup-production.sh` sinh và đặt, Claude không thấy giá trị.
-- Wasmer chuyển request vào app bằng http: phải `URL::forceScheme('https')` ở production, nếu không link mời và URL webhook Telegram ra `http://`.
+- Wasmer CLI có `wasmer app secrets reveal`: Claude không dùng lệnh này. Secret do `scripts/setup-production.sh` sinh và đặt, không in ra; Claude chạy script theo lời Wyatt (18/10/2026) nhưng không thấy giá trị.
+- **Limiter của Laravel lưu trong bảng `cache`.** `/internal/deploy` có `throttle` nên trên DB trống trả 500 trước cả khi tới bước migrate. Bỏ throttle ở `/internal/*` (chữ ký HMAC đã loại request rác mà không đụng DB); có test chặn tái phạm.
+- **curl trên Windows đọc tham số dòng lệnh theo bảng mã ANSI**: body JSON có dấu truyền qua `--data-binary "..."` bị đổi byte nên chữ ký lệch (401). `scripts/internal-call.sh` ghi body ra file rồi ký và gửi cùng file đó (`--data-binary @file`).
+- Log của `wasmer app logs` về chậm vài phút; muốn thấy ngay thì xem log Worker bằng `npx wrangler tail btg-edge`.
 
 **Đã xong:**
 - `/internal/tick`, `/internal/deploy`, `/internal/bootstrap`, ký `X-Internal-Signature` trên cả method, đường dẫn và body. Mỗi đường một secret, secret trống thì trả 404. Thử thật ở máy: script bash ký bằng openssl và hàm của Worker ký bằng Web Crypto đều gọi tick thành công, sai secret thì 401.
 - Telegram theo mục 5.9: nối bằng link `t.me/<bot>?start=<mã một lần, 15 phút>` (nối được cả vào nhóm), `/stop` và chặn bot thì ngắt, tin tiền về `+150.000đ · DH7K3QXM · đã thanh toán` xếp hàng trong cùng DB transaction với giao dịch, báo khi webhook tự tắt. Bot trả lời ngay trong phản hồi webhook, không gọi Bot API. Trang dashboard **Thông báo Telegram** cho owner: nối, gửi thử, ngắt.
-- Worker `btg-edge` (thư mục `edge/`) đã deploy lên tài khoản rirtar.lofi, cron `* * * * *`. Chưa có `TICK_SECRET` nên mỗi lần chạy dừng ngay, chưa gọi app.
-- App `bank-transfer-gateway` đã deploy lần đầu lên Wasmer (`https://bank-transfer-gateway.wasmer.app`, vùng us-losa1, MySQL của Wasmer). Đang trả 500 vì chưa có `APP_KEY` (đã xem log), `/up` trả 200.
+- Worker `btg-edge` (thư mục `edge/`) chạy trên tài khoản rirtar.lofi, cron `* * * * *`. Đã thấy gọi tick thật lúc 13:29 UTC ngày 18/10/2026: HTTP 200, chạy `orders-expire` và `webhooks-deliver` trong 108 ms.
+- App `bank-transfer-gateway` chạy trên Wasmer (`https://bank-transfer-gateway.wasmer.app`, vùng us-losa1, MySQL của Wasmer). Đã đặt `APP_KEY` và secret của tick, deploy (bước `core`), migrate đủ 16 migration qua `/internal/deploy`. `/`, `/up`, `/app/login`, `/docs/api` trả 200; tick không ký trả 401.
+- Shop đầu tiên `wyatt` ("Shop của Wyatt"), owner `rirtar.lofi@gmail.com`. Link mời ở `D:\Wyatt\secrets\bank-transfer-gateway-owner-invite.json`, hết hạn 25/10/2026; trang mời mở được trên production.
+- `TelegramError::chatUnreachable()`: 403 luôn ngắt; 400 chỉ khi "chat not found"; 401 (token bot sai) và lỗi 400 do app thì không. Nhóm nâng cấp thành supergroup thì chuyển shop sang chat id mới.
 - CI có job deploy: chạy trên `main` sau khi test xanh, chỉ khi đã có biến `WASMER_OWNER`; đóng gói, `wasmer deploy`, rồi gọi `/internal/deploy`.
-- `scripts/setup-production.sh` cho Wyatt tự chạy (mục 13). 376 test PHP (1 test đang bỏ qua, xem "Còn lại") và 5 test Worker xanh trên CI.
+- `scripts/setup-production.sh` cho Wyatt tự chạy (mục 13). 390 test PHP và 5 test Worker xanh trên CI.
 
 **Còn lại:**
-- Wyatt chạy `scripts/setup-production.sh` (core, ci, telegram, apply, bootstrap). Sau đó Claude kiểm tick trên production qua log của Worker và app.
-- Phân loại lỗi "chat không còn nhận tin" (`TelegramError::chatUnreachable`), test tương ứng đang bỏ qua.
+- Wyatt mở link mời để đặt mật khẩu owner.
+- Wyatt chạy `bash scripts/setup-production.sh ci` (cần token tạo ở wasmer.io/settings/access-tokens) để push lên main là tự deploy. Tới lúc đó, deploy bằng tay: `scripts/build-wasmer.sh`, `wasmer deploy --dir build/wasmer`, rồi `setup-production.sh migrate`.
+- Wyatt tạo bot qua @BotFather rồi chạy `bash scripts/setup-production.sh telegram`, sau đó `apply`.
 - Thử `CURLOPT_RESOLVE` và hàm `progress` trên Wasmer bằng một endpoint webhook thật. **[cần kiểm tra]**
 - Tên miền `pay.wyattos.cyou`, SSL Full (strict), các quy tắc cache và bảo vệ (mục 10a). Claude soạn bản ghi DNS, hỏi lại Wyatt lúc làm.
 - Nối SePay thật, chuyển thật 2.000đ, ghi GIF luồng từ chuyển khoản tới Telegram.
