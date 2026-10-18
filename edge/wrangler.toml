@@ -12,8 +12,8 @@ preview_urls = false
 crons = ["* * * * *"]
 
 [vars]
-# Địa chỉ app trên Wasmer. Đổi thành https://pay.wyattos.cyou khi tên miền riêng chạy.
-APP_URL = "https://bank-transfer-gateway.wasmer.app"
+# Địa chỉ app: tên miền riêng trỏ về Wasmer.
+APP_URL = "https://pay.wyattos.cyou"
 
 [observability]
 enabled = true

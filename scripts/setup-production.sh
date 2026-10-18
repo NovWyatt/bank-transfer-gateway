@@ -23,7 +23,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="novwyatt/bank-transfer-gateway"
 REPO="NovWyatt/bank-transfer-gateway"
-APP_URL="${APP_URL:-https://bank-transfer-gateway.wasmer.app}"
+APP_URL="${APP_URL:-https://pay.wyattos.cyou}"
 WASMER="${WASMER:-D:/SETUP/wasmer/bin/wasmer.exe}"
 BACKUP="${BACKUP:-/d/Wyatt/secrets/bank-transfer-gateway.env}"
 CLOUDFLARE_EMAIL="rirtar.lofi@gmail.com"

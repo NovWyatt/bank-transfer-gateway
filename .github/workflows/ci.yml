@@ -95,7 +95,7 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     env:
-      APP_URL: ${{ vars.APP_URL || 'https://bank-transfer-gateway.wasmer.app' }}
+      APP_URL: ${{ vars.APP_URL || 'https://pay.wyattos.cyou' }}
       WASMER_VERSION: v7.5.0
     steps:
       - uses: actions/checkout@v5

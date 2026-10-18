@@ -28,7 +28,8 @@ env:
   APP_NAME: "Bank Transfer Gateway"
   APP_ENV: production
   APP_DEBUG: "false"
-  APP_URL: https://bank-transfer-gateway.wasmer.app
+  # Tên miền riêng (CNAME tới Wasmer, DNS only trên Cloudflare). Địa chỉ bank-transfer-gateway.wasmer.app vẫn chạy.
+  APP_URL: https://pay.wyattos.cyou
   APP_LOCALE: vi
   APP_FALLBACK_LOCALE: en
   LOG_CHANNEL: stderr
