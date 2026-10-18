@@ -695,3 +695,27 @@ Quy tắc:
 - Mục nào ghi [cần kiểm tra] thì kiểm tra nguồn chính thức trước khi viết code dựa vào nó.
 - Không gọi dịch vụ AI bên ngoài. Phần gợi ý khớp đơn tự viết theo mục 8.
 ```
+
+---
+
+## 18. Nhật ký tiến độ
+
+### GĐ0: Chuẩn bị (bắt đầu 18/10/2026)
+
+**Đã xong:**
+- Khung Laravel 13.11 dựng ngay tại thư mục Larabox. Kế hoạch đã chuyển thành file này.
+- Git đặt tên commit NovWyatt. Hook pre-commit quét bí mật bằng gitleaks nằm ở `.githooks/`, bật bằng `git config core.hooksPath .githooks`.
+- Hai database trên MariaDB của Larabox: `bank_transfer_gateway` và `bank_transfer_gateway_test`.
+- Pest 4.7.8, Larastan 3 level 6, Pint. Lệnh `composer check` chạy cả ba.
+- Repo public https://github.com/NovWyatt/bank-transfer-gateway. CI xanh: test trên MySQL 8.4, cộng một job quét gitleaks toàn bộ lịch sử.
+- taste-skill đã liên kết vào `.claude/skills/` (mục 9a).
+
+**Còn lại:** spike Wasmer. Mã thử nằm ở nhánh `spike/wasmer` và đã chạy đúng ở máy.
+
+**Bẫy gặp phải:**
+- Khung Laravel 13 kèm `CLAUDE.md` và `AGENTS.md` dặn agent chạy script cài PHP tải từ php.new, rồi cài Laravel Boost. Đã thay bằng hướng dẫn riêng của dự án và không chạy các lệnh đó.
+- Gói `laravel/pao` có sẵn trong khung làm Pest, Pint và PHPStan in kết quả dạng JSON gọn khi chạy trong phiên agent. CI vẫn in như bình thường.
+- `gitleaks-action@v2` hỏng ở lần push đầu của repo mới, vì nó quét dải `commit_gốc^..` mà commit gốc không có commit cha. Đã thay bằng CLI gitleaks có kiểm checksum.
+- `ubuntu-latest` chuyển sang Ubuntu 26 từ 19/10/2026, nên CI ghim `ubuntu-24.04`.
+- MariaDB của Larabox chạy giờ hệ thống +07:00, làm cột `useCurrent()` lệch 7 giờ so với `now()` của app. Đã đặt `timezone => +00:00` cho kết nối mysql, có test kiểm tra.
+- `php artisan serve` không trả phản hồi trước khi chạy việc `afterResponse` (request phải chờ cả việc đó). Câu 4 của spike chỉ đo được trên Wasmer.
