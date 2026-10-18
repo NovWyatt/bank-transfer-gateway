@@ -32,5 +32,7 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- .env ở máy dev có thể bật để thử với script mẫu; test chặn SSRF cần giá trị cố định. -->
+        <env name="WEBHOOKS_ALLOW_PRIVATE_TARGETS" value="false" force="true"/>
     </php>
 </phpunit>
