@@ -35,16 +35,10 @@ final class CancelOrder
             $from = $locked->status;
             $locked->update(['status' => OrderStatus::Cancelled]);
 
-            // shop_id không nằm trong fillable: ghi tường minh, không dựa vào CurrentShop.
-            AuditLog::query()->forceCreate([
-                'shop_id' => $locked->shop_id,
-                'user_id' => $by->getKey(),
-                'action' => 'order.cancelled',
-                'subject_type' => $locked->getMorphClass(),
-                'subject_id' => $locked->getKey(),
-                'meta' => ['from' => $from->value, 'paid_amount' => $locked->paid_amount],
-                'ip' => $ip,
-            ]);
+            AuditLog::record($locked->shop_id, $by, 'order.cancelled', $locked, [
+                'from' => $from->value,
+                'paid_amount' => $locked->paid_amount,
+            ], $ip);
 
             return $locked;
         }, 3);

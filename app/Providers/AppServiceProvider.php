@@ -42,5 +42,8 @@ class AppServiceProvider extends ServiceProvider
         // Trang thanh toán hỏi trạng thái 5 giây một lần (12 request/phút); 120 cho thoải mái
         // nhiều tab, đủ chặn dò mã đơn hàng loạt.
         RateLimiter::for('pay', fn (Request $request) => Limit::perMinute(120)->by('pay:'.$request->ip()));
+
+        // Link mời chỉ mở vài lần; giới hạn chặt để dò token không có ý nghĩa.
+        RateLimiter::for('invitations', fn (Request $request) => Limit::perMinute(30)->by('invitations:'.$request->ip()));
     }
 }

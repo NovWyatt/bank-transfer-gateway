@@ -296,7 +296,12 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
   - Owner quản lý kết nối, webhook, token API và thành viên.
   - Staff xem đơn, tạo đơn, duyệt gợi ý.
 - Mọi model của một shop có global scope theo `shop_id` hiện tại (`ShopScope`). Trên dashboard, Filament gắn thêm scope tenant của riêng nó, nên có hai lớp lọc độc lập.
-- Trang chỉ dành cho owner (tài khoản ngân hàng, kết nối) chặn bằng `canAccess()` qua `App\Tenancy\ShopAccess`. Policy cho API thêm ở GĐ2.
+- Trang chỉ dành cho owner (tài khoản ngân hàng, kết nối, thành viên) chặn bằng `canAccess()` qua `App\Tenancy\ShopAccess`. Policy cho API thêm ở GĐ2.
+- **Mời thành viên bằng link**, vì app không gửi email:
+  - Owner nhập email và vai trò, app tạo link `/app/invitations/{token}` để owner tự gửi qua Zalo, Messenger. Token 48 ký tự, bảng chỉ lưu sha256, link hết hạn sau 7 ngày, dùng một lần. Mời lại cùng email thì làm mới lời mời cũ và link cũ hết dùng.
+  - Người được mời mở link: chưa có tài khoản thì đặt tên và mật khẩu ngay tại đó; đã có tài khoản thì đăng nhập rồi quay lại; đang đăng nhập bằng email khác thì phải đăng xuất. Chỉ nhận được dưới đúng email ghi trong lời mời.
+  - Shop luôn còn ít nhất một owner: đổi vai trò và xóa thành viên khóa các dòng owner bằng `lockForUpdate` trước khi đếm. Owner không tự đổi vai trò hay tự xóa mình trên giao diện.
+  - Mọi thao tác ghi `audit_logs`: `member.invited`, `member.invitation_renewed`, `member.invitation_revoked`, `member.joined`, `member.role_changed`, `member.removed`.
 - Bộ test **cách ly tenant**: user của shop A gọi mọi route của shop B phải nhận 404 hoặc 403 (`tests/Feature/Dashboard`).
 - Dashboard dùng **Filament 5.10.2 với Livewire 4.4.7**, chạy được trên Laravel 13 (đã dựng và test ngày 18/10/2026). Panel ở `/app/{shop-slug}`, tenancy qua `->tenant(Shop::class, slugAttribute: 'slug')`.
 
@@ -324,6 +329,7 @@ Tài liệu API sinh tự động bằng `dedoc/scramble`. Nó có hỗ trợ La
 | `users` | Mặc định của Laravel |
 | `shops` | `name`, `slug`, `order_prefix`, `timezone`, `telegram_chat_id`, `settings` (json), `is_demo` |
 | `shop_user` | `shop_id`, `user_id`, `role` |
+| `shop_invitations` | `shop_id`, `email`, `role`, `token_hash` (sha256 của token trong link, unique), `invited_by`, `expires_at` (7 ngày), `accepted_at`, `accepted_by` |
 | `bank_accounts` | `shop_id`, `bank_bin`, `bank_code`, `account_number`, `account_name`, `label`, `is_default` |
 | `provider_connections` | `shop_id`, `uuid` (UUIDv4, nằm trong URL webhook), `provider` (sepay, pay2s, payos, simulator), `bank_account_id` (null: lấy theo số tài khoản trong payload), `label`, `credentials` (cast `encrypted:array`), `status`, `last_received_at` |
 | `orders` | `shop_id`, `bank_account_id` (tài khoản nhận tiền của đơn), `code` (unique), `external_ref` (unique theo shop), `amount`, `paid_amount`, `status`, `description`, `customer_name`, `expires_at`, `paid_at`, `paid_after_expiry`, `created_via`, `metadata` (json) |
@@ -796,6 +802,10 @@ Quy tắc:
 - Trang tạo và trang xem của Filament chia sẵn 2 cột. `Section` không đặt `columnSpanFull()` thì chỉ chiếm nửa trang.
 - `scopedUnique()` của Filament là luật dạng closure, nên test không kiểm được tên luật `unique` qua `assertHasFormErrors(['field' => 'unique'])`. Chỉ kiểm có lỗi ở trường đó.
 - Khung dự án không có `filament:upgrade` trong `post-autoload-dump`. Đã thêm. Asset Filament đã publish (`public/css|js|fonts/filament`, khoảng 4,5 MB) vẫn commit, vì chưa chắc bước build trên Wasmer có chạy script của Composer.
+- Link mời `/app/invitations/{token}` trùng dạng với `/app/{shop}/...` của tenant (giống `/app/login` của Filament). Khi làm form tạo shop phải cấm slug `invitations`, `login`, `logout`, `register`, `password-reset`.
+- `discoverWidgets()` đưa mọi widget trong `app/Filament/Widgets` lên trang tổng quan. Bảng lời mời đặt ở `app/Filament/Members` và có `$isDiscovered = false`.
+- Widget của Filament nạp lười (lazy): HTML ban đầu của trang chưa có nội dung widget, test HTTP không `assertSee` được. Test widget bằng `Livewire::test(Widget::class)`.
+- Dataset Pest dạng closure lồng closure (`fn () => fn ($test) => …`) không chạy như mong đợi. Dùng dataset chuỗi rồi `match` trong test.
 
 **Đã xong:**
 - Lõi thuần (không DB): mã đơn, chuỗi VietQR kèm CRC, chuẩn hóa nội dung và tìm mã đơn (62 test).
@@ -814,8 +824,9 @@ Quy tắc:
   - Widget: đã nhận hôm nay theo múi giờ shop, đơn đang chờ, giao dịch chưa khớp.
   - Giờ hiển thị theo múi giờ của shop. Thông báo kiểm tra dữ liệu tiếng Việt ở `lang/vi/validation.php`.
 - Đã thử ở máy (18/10/2026): đăng nhập dashboard, tạo đơn 275.000đ, `pay:simulate` cho đơn sang "Đã thanh toán", giao dịch hiện ở cả trang đơn lẫn danh sách giao dịch. 206 test xanh.
+- Thành viên (mục 5.8): trang Thành viên cho owner (mời, đổi vai trò, xóa), bảng lời mời chưa nhận (tạo link mới, thu hồi), trang nhận lời mời ngoài vùng cần đăng nhập. Đã thử ở máy: owner mời, mở link khi đang đăng nhập email khác, đăng xuất, tạo tài khoản, vào shop với vai trò nhân viên (không thấy trang của owner, gõ thẳng URL bị 403), mở lại link đã dùng. 235 test xanh.
 
 **Còn lại của GĐ1:**
 - Tunnel `btg-dev`: Wyatt chạy `cloudflared tunnel login` trên tài khoản rirtar.lofi (mục 10a, mục 13). Sau đó thử "Gửi thử" của SePay và sandbox Pay2S đi qua tunnel.
 - Quét mã VietQR bằng ít nhất hai app ngân hàng (mục 5.7).
-- Màn hình mời và quản lý thành viên (owner thêm staff). Hiện chỉ thêm được qua seeder hoặc tinker.
+- ~~Màn hình mời và quản lý thành viên~~: xong ngày 18/10/2026.

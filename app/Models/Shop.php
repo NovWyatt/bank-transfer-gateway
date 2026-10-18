@@ -65,4 +65,16 @@ class Shop extends Model
     {
         return $this->hasMany(Transaction::class);
     }
+
+    /** @return HasMany<Membership, $this> */
+    public function memberships(): HasMany
+    {
+        return $this->hasMany(Membership::class);
+    }
+
+    /** @return HasMany<ShopInvitation, $this> */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(ShopInvitation::class);
+    }
 }

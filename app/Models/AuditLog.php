@@ -17,6 +17,25 @@ class AuditLog extends Model
     public const UPDATED_AT = null;
 
     /**
+     * Ghi một dòng nhật ký. shop_id không nằm trong fillable nên ghi tường minh,
+     * không dựa vào CurrentShop (đường nhận lời mời chạy khi chưa có shop hiện tại).
+     *
+     * @param  array<string, mixed>|null  $meta
+     */
+    public static function record(int $shopId, ?User $user, string $action, ?Model $subject = null, ?array $meta = null, ?string $ip = null): self
+    {
+        return static::query()->forceCreate([
+            'shop_id' => $shopId,
+            'user_id' => $user?->getKey(),
+            'action' => $action,
+            'subject_type' => $subject?->getMorphClass(),
+            'subject_id' => $subject?->getKey(),
+            'meta' => $meta,
+            'ip' => $ip,
+        ]);
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array

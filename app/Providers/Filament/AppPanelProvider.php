@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Actions\Members\InviteMember;
+use App\Filament\Auth\JoinShop;
 use App\Http\Middleware\SetCurrentShopFromPanel;
 use App\Models\Shop;
 use Filament\FontProviders\LocalFontProvider;
@@ -19,6 +21,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
@@ -36,6 +39,12 @@ class AppPanelProvider extends PanelProvider
             ->login()
             ->brandName('Bank Transfer Gateway')
             ->tenant(Shop::class, slugAttribute: 'slug')
+            // Link mời nằm ngoài vùng cần đăng nhập: người được mời có thể chưa có tài khoản.
+            // Đường dẫn /app/invitations/... trùng dạng /app/{shop}/..., nên slug "invitations" phải cấm khi tạo shop.
+            ->routes(fn () => Route::get('/invitations/{token}', JoinShop::class)
+                ->where('token', '[A-Za-z0-9]{'.InviteMember::TOKEN_LENGTH.'}')
+                ->middleware('throttle:invitations')
+                ->name('invitations.accept'))
             ->tenantMiddleware([SetCurrentShopFromPanel::class], isPersistent: true)
             // Cùng phông tự host với trang /pay; Filament mặc định dùng Inter, skill cấm.
             ->font('Hanken Grotesk', url: asset('css/fonts.css'), provider: LocalFontProvider::class)
