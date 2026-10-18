@@ -6,6 +6,9 @@ use App\Models\Shop;
 use App\Models\User;
 use App\Payments\Banks\BankDirectory;
 use App\Tenancy\CurrentShop;
+use App\Webhooks\Security\HostResolver;
+use App\Webhooks\Security\SystemHostResolver;
+use App\Webhooks\Security\UrlGuard;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -25,6 +28,14 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(BankDirectory::class, fn () => new BankDirectory(
             database_path('data/banks.json'),
+        ));
+
+        $this->app->bind(HostResolver::class, SystemHostResolver::class);
+
+        // Cho phép địa chỉ nội bộ chỉ khi KHÔNG phải production, dù biến môi trường có bật.
+        $this->app->bind(UrlGuard::class, fn ($app) => new UrlGuard(
+            $app->make(HostResolver::class),
+            allowPrivate: ! $app->isProduction() && (bool) config('webhooks.allow_private_targets'),
         ));
     }
 
@@ -49,6 +60,11 @@ class AppServiceProvider extends ServiceProvider
         // API v1: 120 request/phút cho mỗi shop (đã qua auth:sanctum nên biết shop), còn lại theo IP.
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
             ($shop = $request->user('sanctum')) instanceof Shop ? 'api:shop:'.$shop->getKey() : 'api:ip:'.$request->ip(),
+        ));
+
+        // Gửi thử webhook chạy đồng bộ, có thể mất tới 10 giây: giới hạn chặt hơn API thường.
+        RateLimiter::for('webhook-test', fn (Request $request) => Limit::perMinute(10)->by(
+            ($shop = $request->user('sanctum')) instanceof Shop ? 'webhook-test:shop:'.$shop->getKey() : 'webhook-test:ip:'.$request->ip(),
         ));
 
         // Tài liệu API (/docs/api) công khai: chỉ mô tả cấu trúc, không có dữ liệu của shop nào.

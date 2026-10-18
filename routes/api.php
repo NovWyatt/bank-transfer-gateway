@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\TransactionController;
+use App\Http\Controllers\Api\V1\WebhookEndpointController;
 use App\Http\Middleware\SetCurrentShopFromToken;
 use Illuminate\Support\Facades\Route;
 
@@ -23,4 +24,9 @@ Route::middleware(['auth:sanctum', SetCurrentShopFromToken::class, 'throttle:api
     Route::get('/transactions', [TransactionController::class, 'index'])
         ->middleware('abilities:transactions:read')
         ->name('transactions.index');
+
+    Route::post('/webhook-endpoints/{id}/test', [WebhookEndpointController::class, 'test'])
+        ->whereNumber('id')
+        ->middleware(['abilities:webhooks:write', 'throttle:webhook-test'])
+        ->name('webhook-endpoints.test');
 });

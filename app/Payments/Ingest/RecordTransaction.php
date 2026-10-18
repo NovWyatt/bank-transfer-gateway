@@ -4,6 +4,7 @@ namespace App\Payments\Ingest;
 
 use App\Enums\TransactionStatus;
 use App\Enums\TransferDirection;
+use App\Enums\WebhookEventType;
 use App\Models\BankAccount;
 use App\Models\InboundEvent;
 use App\Models\ProviderConnection;
@@ -11,6 +12,7 @@ use App\Models\Transaction;
 use App\Payments\Matching\RuleMatcher;
 use App\Payments\Memo\MemoNormalizer;
 use App\Payments\Providers\NormalizedTransaction;
+use App\Webhooks\WebhookDispatcher;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -27,6 +29,7 @@ final class RecordTransaction
 
     public function __construct(
         private readonly RuleMatcher $matcher,
+        private readonly WebhookDispatcher $webhooks,
     ) {}
 
     /**
@@ -85,7 +88,16 @@ final class RecordTransaction
             }
 
             if ($transaction->status === TransactionStatus::Unmatched) {
-                $this->matcher->match($transaction, $connection->shop);
+                $order = $this->matcher->match($transaction, $connection->shop);
+
+                // Ghi webhook trong cùng transaction: deadlock chạy lại thì bản ghi của lượt hỏng cũng mất.
+                $type = $order === null ? null : WebhookEventType::forOrderStatus($order->status);
+
+                if ($order === null) {
+                    $this->webhooks->transaction(WebhookEventType::TransactionUnmatched, $transaction);
+                } elseif ($type !== null) {
+                    $this->webhooks->order($type, $order, $transaction);
+                }
             }
 
             return $transaction;

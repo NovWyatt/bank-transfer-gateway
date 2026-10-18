@@ -14,7 +14,7 @@ it('hủy đơn trả thiếu và ghi số tiền đã nhận vào nhật ký', 
     ]);
     $user = User::factory()->create();
 
-    (new CancelOrder)->handle($order, $user, '203.0.113.7');
+    app(CancelOrder::class)->handle($order, $user, '203.0.113.7');
 
     expect($order->refresh()->status)->toBe(OrderStatus::Cancelled);
 
@@ -27,7 +27,7 @@ it('hủy đơn trả thiếu và ghi số tiền đã nhận vào nhật ký', 
 it('hủy được đơn hết hạn để ngừng nhận tiền trong thời gian ân hạn', function (): void {
     $order = Order::factory()->expired()->create(['status' => OrderStatus::Expired]);
 
-    (new CancelOrder)->handle($order, User::factory()->create());
+    app(CancelOrder::class)->handle($order, User::factory()->create());
 
     expect($order->refresh()->status)->toBe(OrderStatus::Cancelled);
 });
@@ -35,7 +35,7 @@ it('hủy được đơn hết hạn để ngừng nhận tiền trong thời gi
 it('không hủy đơn đã đủ tiền hoặc đã hủy', function (OrderStatus $status): void {
     $order = Order::factory()->create(['status' => $status]);
 
-    expect(fn () => (new CancelOrder)->handle($order, User::factory()->create()))
+    expect(fn () => app(CancelOrder::class)->handle($order, User::factory()->create()))
         ->toThrow(DomainException::class);
 
     expect($order->refresh()->status)->toBe($status)

@@ -83,4 +83,16 @@ class Shop extends Model
     {
         return $this->hasMany(ShopInvitation::class);
     }
+
+    /** @return HasMany<WebhookEndpoint, $this> */
+    public function webhookEndpoints(): HasMany
+    {
+        return $this->hasMany(WebhookEndpoint::class);
+    }
+
+    /** @return HasMany<WebhookDelivery, $this> */
+    public function webhookDeliveries(): HasMany
+    {
+        return $this->hasMany(WebhookDelivery::class);
+    }
 }

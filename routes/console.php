@@ -1,11 +1,13 @@
 <?php
 
 use App\Actions\ExpireOrders;
+use App\Actions\PruneOldRecords;
 use App\Enums\Provider;
 use App\Models\Order;
 use App\Models\ProviderConnection;
 use App\Payments\Providers\SePaySignature;
 use App\Tenancy\ShopScope;
+use App\Webhooks\DeliverDueWebhooks;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schedule;
@@ -52,9 +54,24 @@ Artisan::command('pay:simulate {code} {amount?} {--content=}', function (string 
     return $response->successful() ? 0 : 1;
 })->purpose('Giả lập khách chuyển khoản cho một đơn, đi qua đường nhận webhook thật');
 
+Artisan::command('webhooks:deliver', function (DeliverDueWebhooks $deliver) {
+    $this->info('Đã gửi '.$deliver().' webhook.');
+})->purpose('Gửi các webhook đến hạn ngay, không chờ nhịp mỗi phút');
+
 // Dùng Schedule::call (chạy trong tiến trình hiện tại), không dùng Schedule::command:
 // command() tìm đường dẫn php bằng exec(), mà WebAssembly trên Wasmer không fork được.
 // Trên Wasmer, Cloudflare Worker gọi /internal/tick mỗi phút để chạy các lịch này (GĐ3).
-Schedule::call(new ExpireOrders)
+// Truyền tên class: container tạo đối tượng và gọi __invoke, kèm phụ thuộc của constructor.
+Schedule::call(ExpireOrders::class)
     ->name('orders-expire')
     ->everyMinute();
+
+// Chạy sau orders-expire để webhook order.expired của nhịp này đi luôn.
+Schedule::call(DeliverDueWebhooks::class)
+    ->name('webhooks-deliver')
+    ->everyMinute()
+    ->withoutOverlapping(2);
+
+Schedule::call(PruneOldRecords::class)
+    ->name('prune-old-records')
+    ->hourly();

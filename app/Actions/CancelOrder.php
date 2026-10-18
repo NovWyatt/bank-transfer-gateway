@@ -3,9 +3,11 @@
 namespace App\Actions;
 
 use App\Enums\OrderStatus;
+use App\Enums\WebhookEventType;
 use App\Models\AuditLog;
 use App\Models\Order;
 use App\Models\User;
+use App\Webhooks\WebhookDispatcher;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +17,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class CancelOrder
 {
+    public function __construct(
+        private readonly WebhookDispatcher $webhooks,
+    ) {}
+
     /**
      * @param  User|null  $by  người bấm hủy trên dashboard; null khi hủy qua API bằng token của shop
      *
@@ -42,6 +48,8 @@ final class CancelOrder
                 'paid_amount' => $locked->paid_amount,
                 'via' => $by === null ? 'api' : 'dashboard',
             ], $ip);
+
+            $this->webhooks->order(WebhookEventType::OrderCancelled, $locked);
 
             return $locked;
         }, 3);
