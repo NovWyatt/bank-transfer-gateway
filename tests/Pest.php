@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Shop;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Tests\TestCase;
@@ -32,4 +33,20 @@ function webhookRequest(string $body, array $headers = [], string $contentType =
     }
 
     return Request::create('/hooks/test', 'POST', server: $server, content: $body);
+}
+
+/**
+ * Tạo token thật cho shop và gắn vào các request sau. Quên guard cũ trước, vì trong một test
+ * app giữ nguyên instance và RequestGuard nhớ shop của request trước.
+ *
+ * @param  list<string>  $abilities
+ */
+function apiAs(Shop $shop, array $abilities = ['orders:read', 'orders:write', 'transactions:read', 'webhooks:write']): string
+{
+    app('auth')->forgetGuards();
+
+    $token = $shop->createToken('test', $abilities)->plainTextToken;
+    test()->withToken($token);
+
+    return $token;
 }

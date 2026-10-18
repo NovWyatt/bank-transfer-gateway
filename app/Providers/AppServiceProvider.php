@@ -2,11 +2,14 @@
 
 namespace App\Providers;
 
+use App\Models\Shop;
+use App\Models\User;
 use App\Payments\Banks\BankDirectory;
 use App\Tenancy\CurrentShop;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -42,6 +45,14 @@ class AppServiceProvider extends ServiceProvider
         // Trang thanh toán hỏi trạng thái 5 giây một lần (12 request/phút); 120 cho thoải mái
         // nhiều tab, đủ chặn dò mã đơn hàng loạt.
         RateLimiter::for('pay', fn (Request $request) => Limit::perMinute(120)->by('pay:'.$request->ip()));
+
+        // API v1: 120 request/phút cho mỗi shop (đã qua auth:sanctum nên biết shop), còn lại theo IP.
+        RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by(
+            ($shop = $request->user('sanctum')) instanceof Shop ? 'api:shop:'.$shop->getKey() : 'api:ip:'.$request->ip(),
+        ));
+
+        // Tài liệu API (/docs/api) công khai: chỉ mô tả cấu trúc, không có dữ liệu của shop nào.
+        Gate::define('viewApiDocs', fn (?User $user = null): bool => true);
 
         // Link mời chỉ mở vài lần; giới hạn chặt để dò token không có ý nghĩa.
         RateLimiter::for('invitations', fn (Request $request) => Limit::perMinute(30)->by('invitations:'.$request->ip()));

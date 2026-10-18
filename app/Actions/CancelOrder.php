@@ -16,9 +16,11 @@ use Illuminate\Support\Facades\DB;
 final class CancelOrder
 {
     /**
+     * @param  User|null  $by  người bấm hủy trên dashboard; null khi hủy qua API bằng token của shop
+     *
      * @throws DomainException khi đơn không còn nhận tiền (đã đủ tiền hoặc đã hủy)
      */
-    public function handle(Order $order, User $by, ?string $ip = null): Order
+    public function handle(Order $order, ?User $by, ?string $ip = null): Order
     {
         return DB::transaction(function () use ($order, $by, $ip): Order {
             // Khóa như RuleMatcher, để khoản tiền đến cùng lúc không cộng vào đơn vừa hủy.
@@ -38,6 +40,7 @@ final class CancelOrder
             AuditLog::record($locked->shop_id, $by, 'order.cancelled', $locked, [
                 'from' => $from->value,
                 'paid_amount' => $locked->paid_amount,
+                'via' => $by === null ? 'api' : 'dashboard',
             ], $ip);
 
             return $locked;

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Shop;
 use App\Models\User;
 
 return [
@@ -42,6 +43,12 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // API v1: token Sanctum gắn với shop. Sanctum kiểm tra token đúng là của model trong provider "shops".
+        'sanctum' => [
+            'driver' => 'sanctum',
+            'provider' => 'shops',
+        ],
     ],
 
     /*
@@ -65,6 +72,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+
+        'shops' => [
+            'driver' => 'eloquent',
+            'model' => Shop::class,
         ],
 
         // 'users' => [

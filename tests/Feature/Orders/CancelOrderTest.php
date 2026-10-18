@@ -21,7 +21,7 @@ it('hủy đơn trả thiếu và ghi số tiền đã nhận vào nhật ký', 
     $log = AuditLog::withoutGlobalScopes()->sole();
     expect($log->shop_id)->toBe($order->shop_id)
         ->and($log->ip)->toBe('203.0.113.7')
-        ->and($log->meta)->toBe(['from' => 'partially_paid', 'paid_amount' => 100_000]);
+        ->and($log->meta)->toBe(['from' => 'partially_paid', 'paid_amount' => 100_000, 'via' => 'dashboard']);
 });
 
 it('hủy được đơn hết hạn để ngừng nhận tiền trong thời gian ân hạn', function (): void {

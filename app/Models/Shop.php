@@ -9,10 +9,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'slug', 'order_prefix', 'timezone', 'telegram_chat_id', 'settings', 'is_demo'])]
 class Shop extends Model
 {
+    /*
+     * Token API gắn với shop, không với người dùng: nhân viên nghỉ việc thì tích hợp của shop vẫn chạy.
+     */
+    use HasApiTokens;
+
     /** @use HasFactory<ShopFactory> */
     use HasFactory;
 
