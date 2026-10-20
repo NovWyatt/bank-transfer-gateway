@@ -33,6 +33,7 @@ git -C "$ROOT" archive HEAD | tar -x -C "$OUT"
 
 cp "$ROOT/deploy/wasmer/wasmer.toml" "$OUT/wasmer.toml"
 cp "$ROOT/deploy/wasmer/app.yaml" "$OUT/app.yaml"
+cp "$ROOT/deploy/wasmer/router.php" "$OUT/router.php"
 
 cd "$OUT"
 composer_run install --no-dev --optimize-autoloader --no-interaction --no-progress

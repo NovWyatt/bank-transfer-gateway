@@ -8,13 +8,14 @@ entrypoint = "run"
 [fs]
 "/app" = "."
 
-# Máy chủ web: PHP built-in server, document root là public/.
+# Máy chủ web: PHP built-in server, document root là public/. router.php đưa mọi đường không phải
+# file thật vào Laravel, kể cả đường có đuôi như /qr/{code}.svg và livewire.min.js.
 [[command]]
 name = "run"
 module = "php/php-eh:php"
 runner = "wasi"
 [command.annotations.wasi]
-main-args = ["-t", "/app/public", "-S", "localhost:8080", "-d", "memory_limit=256M"]
+main-args = ["-t", "/app/public", "-S", "localhost:8080", "-d", "memory_limit=256M", "/app/router.php"]
 
 # Lệnh artisan: không job nào dùng (job của Wasmer không thấy secret DB_*), giữ để gỡ lỗi khi cần.
 [[command]]
