@@ -46,7 +46,8 @@ final class SimulateTransfer
             'description' => '',
             'transferAmount' => $amount ?? $order->remainingAmount(),
             'accumulated' => 0,
-            'referenceCode' => 'FT'.random_int(10_000_000_000, 99_999_999_999),
+            // Ghép hai nửa: PHP trên Wasmer là bản 32-bit, số nguyên vượt 2^31 - 1 thành float và random_int ném TypeError.
+            'referenceCode' => 'FT'.random_int(100_000, 999_999).random_int(100_000, 999_999),
         ], JSON_UNESCAPED_UNICODE);
 
         $server = ['CONTENT_TYPE' => 'application/json'];
