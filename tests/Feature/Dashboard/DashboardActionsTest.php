@@ -168,6 +168,21 @@ describe('tài khoản ngân hàng', function (): void {
         expect(BankAccount::query()->sole()->is_default)->toBeTrue();
     });
 
+    it('sửa được số và chủ tài khoản kể cả khi tài khoản đã có đơn', function (): void {
+        Order::factory()->for($this->shop)->create(['bank_account_id' => $this->account->getKey()]);
+
+        Livewire::test(ManageBankAccounts::class)
+            ->callAction(TestAction::make(EditAction::class)->table($this->account), data: [
+                'account_number' => '0123456789',
+                'account_name' => 'Shop của Wyatt',
+            ])
+            ->assertHasNoFormErrors();
+
+        expect($this->account->fresh())
+            ->account_number->toBe('0123456789')
+            ->account_name->toBe('SHOP CUA WYATT');
+    });
+
     it('báo trùng khi shop đã có tài khoản này', function (): void {
         Livewire::test(ManageBankAccounts::class)
             ->callAction(CreateAction::class, data: [

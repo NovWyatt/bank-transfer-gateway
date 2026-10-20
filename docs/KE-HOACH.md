@@ -898,7 +898,7 @@ Quy tắc:
 
 **Còn lại (bắt buộc):**
 - Wyatt mở link mời để đặt mật khẩu owner (hạn 25/10/2026).
-- Ghi GIF trên production: tạo đơn, bấm giả lập, trang `/pay` ở tab khác tự sang "Đã thanh toán".
+- ~~Ghi GIF trên production~~: đã quay ngày 20/10/2026 (đơn `DHXCF2FA`: tạo đơn, bấm giả lập, trang `/pay` ở tab khác tự sang "Đã thanh toán"). GIF có số tài khoản thật nên lưu riêng ở `D:\Wyatt\bank-transfer-gateway`, không đưa vào repo. Muốn đặt vào README thì đổi tài khoản của shop sang số giả rồi quay lại.
 
 **Không bắt buộc (dự án portfolio, quyết định 20/10/2026):**
 - Token Wasmer cho CI (`setup-production.sh ci`). Không có token thì job deploy tự bỏ qua; deploy bằng tay: `scripts/build-wasmer.sh`, `wasmer deploy` trong `build/wasmer`, rồi `setup-production.sh migrate`.
