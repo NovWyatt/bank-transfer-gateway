@@ -304,7 +304,7 @@ Tài liệu API sinh tự động bằng `dedoc/scramble` 0.13.48, chạy đư�
   - `53`=`704`, `54`=số tiền, `58`=`VN`, `62`={ `08`=nội dung }
   - `63`=CRC16-CCITT (đa thức 0x1021, giá trị đầu 0xFFFF), tính trên toàn chuỗi kể cả `6304`
 - Danh sách ngân hàng và BIN lấy từ `https://api.vietqr.io/v2/banks` (76 ngân hàng; trường `bin`, `code`, `shortName`, `transferSupported`). Chụp vào `database/data/banks.json`, đọc qua `App\Payments\Banks\BankDirectory`; không gọi API lúc chạy.
-- **[cần kiểm tra]** Quét QR bằng ít nhất hai app ngân hàng khác nhau để chắc chuỗi đúng.
+- Không bắt buộc (quyết định 20/10/2026, mục 13): quét QR bằng app ngân hàng thật. Chuỗi đã kiểm bằng vector CRC16 đã biết; nếu có dịp thì quét thử bằng hai app khác nhau.
 
 ### 5.8 Nhiều shop và phân quyền
 
@@ -582,7 +582,7 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 - Không đọc các file chứa token: `%APPDATA%\xdg.config\.wrangler\config\default.toml`, `cert.pem` và các file `*.json` của cloudflared.
 - Zone `wyattos.cyou` nằm trong tài khoản rirtar.lofi (gói Free, account id trùng với `wrangler whoami`; kiểm ngày 18/10/2026).
 
-**1. Tunnel cho máy phát triển (GĐ1)**
+**1. Tunnel cho máy phát triển (GĐ1)**: không làm (quyết định 20/10/2026). Thử webhook ở máy đã có `pay:simulate` và nút giả lập; nếu sau này nối SePay thật thì trỏ thẳng vào `pay.wyattos.cyou`. Phần dưới giữ lại để tham khảo.
 - Cách nhanh: quick tunnel `cloudflared tunnel --url http://localhost:8000`, không cần tài khoản. Nhược điểm: địa chỉ `*.trycloudflare.com` đổi mỗi lần chạy, nên phải dán lại URL webhook ở SePay và Pay2S.
 - Cách đề xuất: **tunnel có tên** `btg-dev` trên tài khoản rirtar.lofi, với địa chỉ cố định `dev-pay.wyattos.cyou`.
   1. Wyatt chạy `cloudflared tunnel login` một lần và chọn zone `wyattos.cyou`.
@@ -654,7 +654,7 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
     - mô hình mới kém hơn thì không được dùng;
     - phản hồi của shop demo không vào dữ liệu huấn luyện thật.
 - **Không bắt buộc:** test trình duyệt bằng Pest 4 cho trang `/pay`: tự đổi sang "Đã thanh toán".
-- **E2E thật**, ghi lại thành GIF cho README: Wyatt chuyển 2.000đ từ một tài khoản khác vào tài khoản đã nối SePay. Đơn phải tự chuyển sang `paid` và Telegram phải báo.
+- **E2E trên production**, ghi lại thành GIF cho README: tạo đơn trên dashboard, bấm "Giả lập khách chuyển khoản", trang `/pay` tự chuyển sang "Đã thanh toán". Chuyển thật 2.000đ qua SePay: không bắt buộc (quyết định 20/10/2026).
 
 ---
 
@@ -663,9 +663,9 @@ Wyatt chốt ngày 18/10/2026: mọi thứ trên Cloudflare của dự án chỉ
 | GĐ | Nội dung | Xong khi |
 |---|---|---|
 | **0. Chuẩn bị** | Tạo Laravel ngay tại `C:\Users\Wyatt\Larabox\www\bank-transfer-gateway`, git (`NovWyatt <rirtar.lofi@gmail.com>`), CI (Pint, Larastan, Pest). Tạo repo public `NovWyatt/bank-transfer-gateway` và push (đã được phép, mục 0). **Spike Wasmer** (mục 10) | CI xanh. Spike trả lời đủ 4 câu hỏi và ghi kết quả vào `docs/KE-HOACH.md` |
-| **1. Lõi** | Shop, phân quyền, tài khoản ngân hàng, đơn và mã đơn, VietQR, đường nhận (SePay, Pay2S, Simulator), khớp bằng quy tắc, dashboard cơ bản. Chọn hướng thiết kế bằng taste-skill rồi dựng trang `/pay` theo hướng đó (mục 9a). Tunnel `btg-dev` (mục 10a) | Ở máy: giả lập cho đơn sang `paid`. "Gửi thử" của SePay và sandbox Pay2S đi qua được cloudflared tunnel. `/pay` qua được `inspect.mjs` |
+| **1. Lõi** | Shop, phân quyền, tài khoản ngân hàng, đơn và mã đơn, VietQR, đường nhận (SePay, Pay2S, Simulator), khớp bằng quy tắc, dashboard cơ bản. Chọn hướng thiết kế bằng taste-skill rồi dựng trang `/pay` theo hướng đó (mục 9a). ~~Tunnel `btg-dev` (mục 10a)~~ | Ở máy: giả lập cho đơn sang `paid`. `/pay` qua được `inspect.mjs`. (Tiêu chí "Gửi thử" của SePay và Pay2S qua tunnel bỏ ngày 20/10/2026, mục 13.) |
 | **2. API và webhook gửi đi** | Sanctum, Scramble, `Idempotency-Key`, endpoint webhook, ký, retry, nhật ký, gửi lại, chặn SSRF, script kiểm chữ ký mẫu | Script mẫu kiểm chữ ký thành công. Test retry xanh |
-| **3. Chạy thật** | Deploy Wasmer với MySQL của Wasmer, Worker cron gọi `/internal/tick`, migrate qua `/internal/deploy` từ CI, Telegram, tên miền và các quy tắc Cloudflare (mục 10a). Chuyển thật 2.000đ | Có GIF luồng thật từ chuyển khoản đến Telegram |
+| **3. Chạy thật** | Deploy Wasmer với MySQL của Wasmer, Worker cron gọi `/internal/tick`, migrate qua `/internal/deploy`, tên miền `pay.wyattos.cyou`, nút giả lập chuyển khoản trên dashboard. Không bắt buộc: Telegram, SePay thật, chuyển thật 2.000đ (quyết định 20/10/2026) | Có GIF trên production: tạo đơn, giả lập chuyển khoản, trang `/pay` tự sang "Đã thanh toán" |
 | **4. Gợi ý tự học và hộp chưa khớp** | Hộp giao dịch chưa khớp, đặc trưng, chấm điểm bằng trọng số đặt tay, duyệt, nhật ký kiểm toán, `match_feedback`, `match:train`, `match:eval`, trang mô hình | `match:eval` đạt ngưỡng ghi trong README. Mô hình đã học tốt hơn trọng số đặt tay trên bộ fixture |
 | **5. Hoàn thiện cho profile** | Trang giới thiệu và demo công khai, làm theo đủ quy trình taste-skill (mục 9a). README dạng case study (vấn đề, kiến trúc, quyết định, số liệu), sơ đồ, ảnh chụp ngang khoảng 1,6:1. Không bắt buộc: adapter payOS, Worker đứng trước, Turnstile | Nhà tuyển dụng mở link demo và bấm thử được trong 1 phút. Trang giới thiệu không còn `FAIL` nào khi chạy `inspect.mjs` |
 
@@ -675,31 +675,18 @@ Mỗi giai đoạn: commit nhỏ, viết tiếng Việt. Cuối giai đoạn c�
 
 ## 13. Việc Wyatt phải tự làm
 
-1. ~~Chốt tên repo~~: đã chốt `bank-transfer-gateway`.
-2. ~~Đồng ý tạo repo public trên GitHub và lần push đầu~~: Wyatt đã cho phép Claude thao tác GitHub dưới danh nghĩa NovWyatt (18/10/2026).
-3. **SePay:**
-   1. Đăng ký gói FREE và nối tài khoản ngân hàng cá nhân.
-   2. Tạo webhook loại xác thực HMAC.
-   3. Lưu Secret Key vào `.env` (tự dán).
-4. **Pay2S:**
-   1. Đăng ký gói Free.
-   2. Xem gói này có tạo được Hook không, rồi báo lại. Nếu không được thì chỉ dùng sandbox.
-   3. Token Hook chỉ hiện một lần, nên lưu ngay.
-5. **Bot Telegram:** tạo qua @BotFather (lệnh `/newbot`), rồi chạy `bash scripts/setup-production.sh telegram` để dán token (không hiện chữ). Ở máy dev thì dán vào `.env`.
-6. ~~Khóa API AI~~: không cần. Gợi ý khớp đơn chạy ngay trong app (mục 8).
-7. ~~TiDB Cloud Starter~~: không cần nữa, dùng MySQL của Wasmer (quyết định 18/10/2026).
-8. **Wasmer:**
-   1. Đăng ký.
-   2. Chạy `D:\SETUP\wasmer\bin\wasmer.exe login`.
-   3. Tạo token cho CI ở wasmer.io/settings/access-tokens, rồi chạy `bash scripts/setup-production.sh ci` (đặt `WASMER_TOKEN` và biến `WASMER_OWNER` của repo).
-   4. Chạy `bash scripts/setup-production.sh core` một lần: sinh `APP_KEY` và secret của tick, deploy, đặt vào Wasmer, Worker và GitHub mà không in ra. Sau đó `apply` (redeploy, migrate) và `bootstrap` (tạo shop đầu tiên, in link mời owner).
-9. **Cloudflare** (tài khoản rirtar.lofi@gmail.com, mục 10a):
-   1. Chạy `cloudflared tunnel login` một lần, ở GĐ1.
-   2. Chạy `npx wrangler login` nếu `whoami` không ra rirtar.lofi.
-   3. ~~Thêm bản ghi DNS cho `pay.wyattos.cyou`~~: Claude đã thêm qua Brave ngày 18/10/2026 (mục 10a, phần 2).
-   4. Tắt Bot Fight Mode nếu đang bật.
-   5. Secret `TICK_SECRET` của Worker: bước `core` của `scripts/setup-production.sh` tự đặt sau khi hỏi xác nhận tài khoản.
-10. **Chuyển khoản thử 2.000đ** từ một tài khoản khác (ngân hàng thứ hai hoặc người nhà) vào tài khoản đã nối.
+**Wyatt chốt ngày 20/10/2026:** đây là dự án portfolio, không cần làm kỹ như sản phẩm thật. Không bắt buộc nối ngân hàng thật, chuyển tiền thật hay tạo bot Telegram. Luồng thanh toán trên production chạy bằng nút **"Giả lập khách chuyển khoản"** ở trang đơn: giao dịch giả đi qua đúng đường nhận webhook thật.
+
+**Bắt buộc (một việc):**
+1. Mở link mời owner trong `D:\Wyatt\secrets\bank-transfer-gateway-owner-invite.json` và đặt mật khẩu (link hết hạn 25/10/2026). Sau đó đăng nhập ở `https://pay.wyattos.cyou/app/login`.
+
+**Không bắt buộc, làm khi muốn:**
+- **Bot Telegram:** tạo qua @BotFather (`/newbot`), chạy `bash scripts/setup-production.sh telegram` rồi `apply`, sau đó nối ở trang "Thông báo Telegram".
+- **CI tự deploy:** tạo token ở wasmer.io/settings/access-tokens, chạy `bash scripts/setup-production.sh ci`. Chưa có thì Claude deploy bằng tay từ máy.
+- **SePay thật và chuyển thử 2.000đ:** đăng ký SePay gói FREE, thêm kết nối SePay trên dashboard, dán URL webhook sang SePay và Secret Key của SePay về dashboard.
+- **Pay2S:** chỉ cần nếu muốn thử nhà cung cấp thứ hai.
+
+**Đã xong:** tên repo và quyền GitHub (18/10), Wasmer (đăng ký, đăng nhập CLI, secret production, shop đầu tiên), Cloudflare (wrangler đúng tài khoản rirtar.lofi, DNS cho `pay.wyattos.cyou`, secret của Worker). Không cần: khóa API AI, TiDB, tắt Bot Fight Mode (tên miền để DNS only), tunnel `btg-dev` (thử webhook ở máy đã có `pay:simulate`).
 
 ---
 
@@ -749,7 +736,7 @@ Push `profile.yml` và `media/` lên thì GitHub Actions tự vẽ lại profile
   - Giới hạn gói Hobby: 1 triệu hay 100 nghìn request/tháng (xem trong dashboard).
 - TiDB Starter (chỉ khi chọn TiDB): có `SELECT … FOR UPDATE` và khóa ngoại (từ v6.6), không có `SKIP LOCKED`, `AUTO_INCREMENT` không liên tục, kết nối mở quá 30 phút có thể bị cắt.
 - ~~Filament và Scramble có tương thích Laravel 13 không~~: có, tra trên Packagist ngày 18/10/2026 (mục 9).
-- Chuỗi VietQR quét đúng trên ít nhất hai app ngân hàng.
+- Chuỗi VietQR quét đúng trên ít nhất hai app ngân hàng (không bắt buộc).
 - Cloudflare (mục 10a):
   - ~~Phiên đăng nhập wrangler cũ trên máy là tài khoản nào~~: rirtar.lofi@gmail.com (18/10/2026).
   - ~~Zone `wyattos.cyou` có ở tài khoản rirtar.lofi không~~: có.
@@ -847,8 +834,8 @@ Quy tắc:
 - Thành viên (mục 5.8): trang Thành viên cho owner (mời, đổi vai trò, xóa), bảng lời mời chưa nhận (tạo link mới, thu hồi), trang nhận lời mời ngoài vùng cần đăng nhập. Đã thử ở máy: owner mời, mở link khi đang đăng nhập email khác, đăng xuất, tạo tài khoản, vào shop với vai trò nhân viên (không thấy trang của owner, gõ thẳng URL bị 403), mở lại link đã dùng. 235 test xanh.
 
 **Còn lại của GĐ1:**
-- Tunnel `btg-dev`: Wyatt chạy `cloudflared tunnel login` trên tài khoản rirtar.lofi (mục 10a, mục 13). Sau đó thử "Gửi thử" của SePay và sandbox Pay2S đi qua tunnel.
-- Quét mã VietQR bằng ít nhất hai app ngân hàng (mục 5.7).
+- ~~Tunnel `btg-dev`~~: không cần nữa (quyết định 20/10/2026). App đã có tên miền thật `pay.wyattos.cyou`; nếu sau này nối SePay thì "Gửi thử" thẳng vào production.
+- Quét mã VietQR bằng app ngân hàng (mục 5.7): không bắt buộc, chuỗi đã kiểm bằng vector CRC16 đã biết.
 - ~~Màn hình mời và quản lý thành viên~~: xong ngày 18/10/2026.
 
 ### GĐ2: API và webhook gửi đi (bắt đầu 18/10/2026)
@@ -905,10 +892,15 @@ Quy tắc:
 - CI có job deploy: chạy trên `main` sau khi test xanh, chỉ khi đã có biến `WASMER_OWNER`; đóng gói, `wasmer deploy`, rồi gọi `/internal/deploy`.
 - `scripts/setup-production.sh` cho Wyatt tự chạy (mục 13). 390 test PHP và 5 test Worker xanh trên CI.
 
-**Còn lại:**
-- Wyatt mở link mời để đặt mật khẩu owner.
-- Wyatt chạy `bash scripts/setup-production.sh ci` (cần token tạo ở wasmer.io/settings/access-tokens) để push lên main là tự deploy. Tới lúc đó, deploy bằng tay: `scripts/build-wasmer.sh`, `wasmer deploy --dir build/wasmer`, rồi `setup-production.sh migrate`.
-- Wyatt tạo bot qua @BotFather rồi chạy `bash scripts/setup-production.sh telegram`, sau đó `apply`.
+- Nút **Giả lập khách chuyển khoản** trên trang đơn (chỉ owner, bật bằng `PAYMENTS_SIMULATOR`, mặc định bật): dựng một webhook kiểu SePay có chữ ký rồi đưa thẳng vào `IngestWebhook` trong cùng tiến trình, nên đi đủ đường thật (kiểm chữ ký, ghi `inbound_events`, khớp đơn, xếp webhook và Telegram). Tự tạo kết nối nhà cung cấp "Giả lập" nếu shop chưa có. `pay:simulate` dùng chung action này. Đây là cách demo trên production mà không cần ngân hàng thật (quyết định 20/10/2026). 393 test xanh.
+
+**Còn lại (bắt buộc):**
+- Wyatt mở link mời để đặt mật khẩu owner (hạn 25/10/2026).
+- Ghi GIF trên production: tạo đơn, bấm giả lập, trang `/pay` ở tab khác tự sang "Đã thanh toán".
+
+**Không bắt buộc (dự án portfolio, quyết định 20/10/2026):**
+- Token Wasmer cho CI (`setup-production.sh ci`). Không có token thì job deploy tự bỏ qua; deploy bằng tay: `scripts/build-wasmer.sh`, `wasmer deploy` trong `build/wasmer`, rồi `setup-production.sh migrate`.
+- Bot Telegram (`setup-production.sh telegram` rồi `apply`). Chưa có token thì trang Thông báo Telegram báo chưa cấu hình, phần còn lại vẫn chạy.
+- Nối SePay thật và chuyển thật 2.000đ.
 - Thử `CURLOPT_RESOLVE` và hàm `progress` trên Wasmer bằng một endpoint webhook thật. **[cần kiểm tra]**
 - Quy tắc cache và bảo vệ của Cloudflare (mục 10a, phần 3): chỉ có tác dụng khi bật proxy, đang để DNS only.
-- Nối SePay thật, chuyển thật 2.000đ, ghi GIF luồng từ chuyển khoản tới Telegram.

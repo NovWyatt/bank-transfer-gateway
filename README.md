@@ -5,9 +5,10 @@
 Bank-transfer auto-confirmation for small shops: one API and signed webhooks on top of SePay and Pay2S,
 VietQR codes, multi-shop roles and a self-learning matcher for mistyped transfer memos.
 
-> **Trạng thái:** đang xây dựng. Xong giai đoạn 1 (nhận webhook, khớp đơn, trang thanh toán, dashboard)
-> và giai đoạn 2 (API v1, webhook gửi đi có chữ ký).
-> Kế hoạch đầy đủ: [`docs/KE-HOACH.md`](docs/KE-HOACH.md).
+> **Trạng thái:** dự án portfolio, đang chạy ở <https://pay.wyattos.cyou> (Wasmer Edge, nhịp mỗi phút từ một
+> Cloudflare Worker). Xong giai đoạn 1 (nhận webhook, khớp đơn, trang thanh toán, dashboard), giai đoạn 2
+> (API v1, webhook gửi đi có chữ ký) và phần chạy thật của giai đoạn 3.
+> Bản chạy thật dùng nút giả lập chuyển khoản thay cho ngân hàng thật. Kế hoạch đầy đủ: [`docs/KE-HOACH.md`](docs/KE-HOACH.md).
 
 ## Dự án làm gì
 
@@ -34,7 +35,9 @@ php artisan serve
 
 Seeder dựng shop mẫu "Tiệm gốm Nhà Mây" với sáu đơn ở đủ các trạng thái và một kết nối giả lập.
 Dashboard ở `http://localhost:8000/app`, tài khoản đăng nhập ghi trong `database/seeders/LocalShopSeeder.php`.
-Giả lập khách chuyển khoản (đi đúng đường nhận webhook thật, có ký HMAC):
+Giả lập khách chuyển khoản: owner bấm **Giả lập khách chuyển khoản** ở trang chi tiết đơn, hoặc chạy lệnh dưới.
+Cả hai dựng một webhook kiểu SePay có ký HMAC rồi đưa qua đúng đường nhận thật (kiểm chữ ký, khớp đơn, gửi webhook
+và tin Telegram). Mở trang thanh toán của đơn ở tab khác để thấy nó tự sang "Đã thanh toán". Tắt bằng `PAYMENTS_SIMULATOR=false`.
 
 ```bash
 php artisan pay:simulate DH7K3QXM 150000
